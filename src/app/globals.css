@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Libre Baskerville', serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  ::selection {
+    background: rgba(79, 255, 176, 0.2);
+    color: #4fffb0;
+  }
+  
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: #06060d;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #2a2a4a;
+    border-radius: 3px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4e4e7a;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-night-900 border border-night-700 rounded-xl p-5;
+  }
+  
+  .card-hover {
+    @apply card transition-all duration-200 hover:border-night-500 hover:bg-night-800;
+  }
+  
+  .btn-primary {
+    @apply bg-aurora-green text-night-950 font-semibold px-4 py-2 rounded-lg 
+           text-sm transition-all duration-150 hover:bg-opacity-90 
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  
+  .btn-secondary {
+    @apply border border-night-600 text-night-200 font-medium px-4 py-2 rounded-lg 
+           text-sm transition-all duration-150 hover:border-night-400 hover:text-night-50
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  
+  .btn-danger {
+    @apply border border-red-900 text-red-400 font-medium px-4 py-2 rounded-lg 
+           text-sm transition-all duration-150 hover:border-red-700 hover:text-red-300;
+  }
+  
+  .badge {
+    @apply inline-flex items-center gap-1 text-xs font-mono px-2 py-0.5 rounded-full;
+  }
+  
+  .badge-urgent {
+    @apply badge bg-red-950 text-red-400 border border-red-900;
+  }
+  
+  .badge-high {
+    @apply badge bg-orange-950 text-orange-400 border border-orange-900;
+  }
+  
+  .badge-normal {
+    @apply badge bg-night-800 text-night-400 border border-night-700;
+  }
+  
+  .input {
+    @apply bg-night-900 border border-night-700 text-night-100 rounded-lg px-3 py-2 
+           text-sm w-full focus:outline-none focus:border-aurora-green transition-colors
+           placeholder:text-night-500;
+  }
+  
+  .label {
+    @apply text-xs font-mono text-night-400 uppercase tracking-wider mb-1 block;
+  }
+  
+  .section-header {
+    @apply font-display text-2xl text-night-50 mb-1;
+  }
+  
+  .price-up {
+    @apply text-aurora-green font-mono;
+  }
+  
+  .price-down {
+    @apply text-red-400 font-mono;
+  }
+  
+  .nav-link {
+    @apply flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-night-400 
+           hover:text-night-100 hover:bg-night-800 transition-all duration-150;
+  }
+  
+  .nav-link-active {
+    @apply nav-link bg-night-800 text-aurora-green;
+  }
+}
+
+/* Animated gradient for loading states */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #1a1a30 25%, #2a2a4a 50%, #1a1a30 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Star field background */
+.starfield {
+  background-image: 
+    radial-gradient(1px 1px at 10% 20%, rgba(79,255,176,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 30% 60%, rgba(0,212,255,0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 70% 15%, rgba(79,255,176,0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 85% 80%, rgba(180,79,255,0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 50% 40%, rgba(255,209,102,0.15) 0%, transparent 100%);
+}
