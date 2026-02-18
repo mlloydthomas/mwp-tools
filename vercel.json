@@ -2,36 +2,29 @@
   "crons": [
     {
       "path": "/api/cron/pricing",
-      "schedule": "0 7 * * *",
-      "comment": "Run pricing analysis every morning at 7am UTC"
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/cron/scraper",
-      "schedule": "0 8 * * *",
-      "comment": "Scrape competitor prices every morning at 8am UTC"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/cron/engagement",
-      "schedule": "0 6 * * *",
-      "comment": "Run client engagement prioritization at 6am UTC"
+      "schedule": "0 6 * * *"
     }
   ],
   "functions": {
     "src/app/api/itinerary/generate/route.ts": {
-      "maxDuration": 60,
-      "comment": "Itinerary generation can take up to 60s"
+      "maxDuration": 60
     },
     "src/app/api/cron/pricing/route.ts": {
-      "maxDuration": 300,
-      "comment": "Pricing job analyzes many trips"
+      "maxDuration": 300
     },
     "src/app/api/cron/scraper/route.ts": {
-      "maxDuration": 300,
-      "comment": "Scraper runs multiple pages"
+      "maxDuration": 300
     },
     "src/app/api/cron/engagement/route.ts": {
-      "maxDuration": 300,
-      "comment": "Engagement job processes many clients"
+      "maxDuration": 300
     }
   }
 }
