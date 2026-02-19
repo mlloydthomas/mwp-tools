@@ -87,18 +87,40 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Get company ID
-  const { data: company } = await supabase
+  // Get company ID — auto-seed if missing
+  const KNOWN_COMPANIES: Record<string, { name: string; short_name: string; currency: string }> = {
+    tbt: { name: "Thomson Bike Tours",     short_name: "Thomson",   currency: "USD" },
+    aex: { name: "Alpenglow Expeditions",  short_name: "Alpenglow", currency: "USD" },
+  };
+
+  let { data: company } = await supabase
     .from("companies")
     .select("id, slug, currency")
     .eq("slug", companySlug)
     .single();
 
   if (!company) {
-    return NextResponse.json(
-      { success: false, error: `Company '${companySlug}' not found` },
-      { status: 400 }
-    );
+    const seed = KNOWN_COMPANIES[companySlug];
+    if (!seed) {
+      return NextResponse.json(
+        { success: false, error: `Company '${companySlug}' not found` },
+        { status: 400 }
+      );
+    }
+    // Insert the company and return it
+    const { data: inserted, error: insertError } = await supabase
+      .from("companies")
+      .insert({ slug: companySlug, ...seed })
+      .select("id, slug, currency")
+      .single();
+
+    if (insertError || !inserted) {
+      return NextResponse.json(
+        { success: false, error: `Failed to create company '${companySlug}': ${insertError?.message}` },
+        { status: 500 }
+      );
+    }
+    company = inserted;
   }
 
   // Parse the file
@@ -148,15 +170,35 @@ export async function POST(req: NextRequest) {
           notes: row["Notes"] || null,
         };
 
-        if (!trip.name || !trip.departure_date) {
-          errors.push(`Row missing name or date: ${JSON.stringify(row)}`);
+        if (!trip.name) {
+          errors.push(`Row missing trip name: ${JSON.stringify(row)}`);
           continue;
         }
 
-        await supabase.from("trips").upsert(trip, {
-          onConflict: "company_id, external_id",
-          ignoreDuplicates: false,
-        });
+        // If no departure_date, use a placeholder
+        if (!trip.departure_date) {
+          trip.departure_date = "2026-01-01";
+        }
+
+        if (trip.external_id) {
+          await supabase.from("trips").upsert(trip, {
+            onConflict: "company_id, external_id",
+            ignoreDuplicates: false,
+          });
+        } else {
+          const { data: existing } = await supabase
+            .from("trips")
+            .select("id")
+            .eq("company_id", company.id)
+            .eq("name", trip.name)
+            .eq("departure_date", trip.departure_date)
+            .maybeSingle();
+          if (!existing) {
+            await supabase.from("trips").insert(trip);
+          } else {
+            await supabase.from("trips").update(trip).eq("id", existing.id);
+          }
+        }
         inserted++;
       } catch (err) {
         errors.push(`Row error: ${err instanceof Error ? err.message : "unknown"}`);
