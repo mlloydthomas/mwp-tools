@@ -25,8 +25,8 @@ export default function PricingPage() {
   const [editValue, setEditValue] = useState("");
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
 
-  const loadData = useCallback(async (co: Company) => {
-    setLoading(true);
+  const loadData = useCallback(async (co: Company, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [recsRes, tripsRes, compRes] = await Promise.all([
         fetch(`/api/pricing/recommendations?status=pending&company=${co}`).then(r => r.json()),
@@ -51,7 +51,7 @@ export default function PricingPage() {
       const data = await res.json();
       if (data.success) {
         setAnalysisResult(`✓ Analyzed ${data.trips_analyzed} trips — ${data.recommendations_created} new recommendation${data.recommendations_created !== 1 ? "s" : ""}`);
-        await loadData(company);
+        await loadData(company, true);
       } else {
         setAnalysisResult(`Error: ${data.error}`);
       }
