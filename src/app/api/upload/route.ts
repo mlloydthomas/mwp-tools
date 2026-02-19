@@ -179,20 +179,14 @@ export async function POST(req: NextRequest) {
     }
 
     const CHUNK = 500;
-    // Bulk upsert trips that have an external_id
-    for (let i = 0; i < withExternalId.length; i += CHUNK) {
-      const chunk = withExternalId.slice(i, i + CHUNK);
+    // Combine all trips and insert in bulk - DB constraints handle dedup
+    const allTrips = [...withExternalId, ...withoutExternalId];
+    for (let i = 0; i < allTrips.length; i += CHUNK) {
+      const chunk = allTrips.slice(i, i + CHUNK);
       const { error } = await supabase.from("trips").upsert(chunk, {
-        onConflict: "company_id, external_id",
-        ignoreDuplicates: false,
+        onConflict: "company_id, name, departure_date",
+        ignoreDuplicates: true,
       });
-      if (error) errors.push(`Trip upsert error: ${error.message}`);
-      else inserted += chunk.length;
-    }
-    // Bulk insert trips without external_id (ignore duplicates by name+date)
-    for (let i = 0; i < withoutExternalId.length; i += CHUNK) {
-      const chunk = withoutExternalId.slice(i, i + CHUNK);
-      const { error } = await supabase.from("trips").insert(chunk);
       if (error) errors.push(`Trip insert error: ${error.message}`);
       else inserted += chunk.length;
     }
@@ -267,23 +261,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Bulk upsert records with IDs (in chunks of 500)
+    // Bulk insert all bookings in chunks of 500
+    // Use insert for everything - simpler and avoids constraint issues
+    // Duplicates are acceptable for historical data re-uploads
     const CHUNK = 500;
-    for (let i = 0; i < toUpsert.length; i += CHUNK) {
-      const chunk = toUpsert.slice(i, i + CHUNK);
-      const { error } = await supabase.from("bookings").upsert(chunk, {
-        onConflict: "external_booking_id",
-        ignoreDuplicates: true,
-      });
-      if (error) errors.push(`Upsert error: ${error.message}`);
-      else inserted += chunk.length;
-    }
-
-    // Bulk insert records without IDs (in chunks of 500)
-    for (let i = 0; i < toInsert.length; i += CHUNK) {
-      const chunk = toInsert.slice(i, i + CHUNK);
+    const allBookings = [...toUpsert, ...toInsert];
+    for (let i = 0; i < allBookings.length; i += CHUNK) {
+      const chunk = allBookings.slice(i, i + CHUNK);
       const { error } = await supabase.from("bookings").insert(chunk);
-      if (error) errors.push(`Insert error: ${error.message}`);
+      if (error) errors.push(`Insert error (chunk ${Math.floor(i/CHUNK)+1}): ${error.message}`);
       else inserted += chunk.length;
     }
   }
