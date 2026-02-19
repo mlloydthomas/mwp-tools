@@ -1,10 +1,13 @@
 // POST /api/pricing/run?company=tbt
-// Manually trigger pricing analysis for a company (same logic as cron but scoped to one company)
+// Manually trigger pricing analysis for a company
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { analyzeTripPricing } from "@/lib/anthropic";
 import { differenceInDays, parseISO } from "date-fns";
+
+const EXCLUDED_TYPES = ["local", "via", "rental", "rental_other"];
+const MAX_CLAUDE_CALLS = 20; // Safety cap to avoid timeout
 
 export async function POST(req: NextRequest) {
   const supabase = createServiceClient();
@@ -24,74 +27,67 @@ export async function POST(req: NextRequest) {
 
   const today = new Date();
   const todayStr = today.toISOString().split("T")[0];
+  const currentYear = today.getFullYear();
   let processed = 0;
   let recommendations = 0;
 
-  // Get open upcoming trips
-  const { data: trips, error } = await supabase
+  // Get all open trips for current year
+  const { data: allTrips, error } = await supabase
     .from("trips")
     .select("*")
     .eq("company_id", company.id)
     .eq("status", "open")
-    .gte("departure_date", todayStr.substring(0, 4) + "-01-01")
+    .gte("departure_date", `${currentYear}-01-01`)
     .order("departure_date", { ascending: true });
 
-  if (error || !trips?.length) {
+  if (error || !allTrips?.length) {
     return NextResponse.json({ success: true, trips_analyzed: 0, recommendations_created: 0, message: "No open trips found" });
   }
 
-  // Get booking counts in one query
-  const { data: bookings } = await supabase
-    .from("bookings")
-    .select("trip_id, guest_count")
-    .in("trip_id", trips.map(t => t.id))
-    .eq("status", "confirmed");
+  // Filter excluded types in JS
+  const trips = allTrips.filter(t => !EXCLUDED_TYPES.includes(t.trip_type));
+
+  if (!trips.length) {
+    return NextResponse.json({ success: true, trips_analyzed: 0, recommendations_created: 0, message: "No qualifying trips found" });
+  }
+
+  const tripIds = trips.map(t => t.id);
+
+  // Bulk fetch bookings, waitlist, existing recs in parallel
+  const [bookingsRes, waitlistRes, existingRecsRes, competitorsRes] = await Promise.all([
+    supabase.from("bookings").select("trip_id, guest_count").in("trip_id", tripIds).eq("status", "confirmed"),
+    supabase.from("bookings").select("trip_id, guest_count").in("trip_id", tripIds).eq("status", "waitlist"),
+    supabase.from("ai_recommendations").select("trip_id").in("trip_id", tripIds).eq("status", "pending").eq("tool", "pricing"),
+    supabase.from("competitor_products").select("*").eq("company_id", company.id).eq("is_active", true).not("last_price_usd", "is", null),
+  ]);
 
   const bookingMap: Record<string, number> = {};
-  bookings?.forEach(b => {
+  bookingsRes.data?.forEach(b => {
     bookingMap[b.trip_id] = (bookingMap[b.trip_id] || 0) + (b.guest_count || 1);
   });
 
-  // Get waitlist counts
-  const { data: waitlist } = await supabase
-    .from("bookings")
-    .select("trip_id, guest_count")
-    .in("trip_id", trips.map(t => t.id))
-    .eq("status", "waitlist");
-
   const waitlistMap: Record<string, number> = {};
-  waitlist?.forEach(w => {
+  waitlistRes.data?.forEach(w => {
     waitlistMap[w.trip_id] = (waitlistMap[w.trip_id] || 0) + (w.guest_count || 1);
   });
 
-  // Get competitor pricing
-  const { data: competitors } = await supabase
-    .from("competitor_products")
-    .select("*")
-    .eq("company_id", company.id)
-    .eq("is_active", true)
-    .not("last_price_usd", "is", null);
+  const existingTripIds = new Set((existingRecsRes.data || []).map(r => r.trip_id));
+  const competitors = competitorsRes.data || [];
+
+  let claudeCalls = 0;
 
   for (const trip of trips) {
     try {
+      // Skip trips with no price set
+      if (!trip.current_price_usd || trip.current_price_usd <= 0) { processed++; continue; }
+
       const bookingsCount = bookingMap[trip.id] || 0;
       const waitlistCount = waitlistMap[trip.id] || 0;
       const capacityPct = bookingsCount / (trip.capacity_max || 12);
       const daysUntilDeparture = differenceInDays(parseISO(trip.departure_date), today);
 
-      // Skip trips more than 2 years out
-      if (daysUntilDeparture > 730) { processed++; continue; }
-
       // Skip if already has a pending recommendation
-      const { data: existing } = await supabase
-        .from("ai_recommendations")
-        .select("id")
-        .eq("trip_id", trip.id)
-        .eq("status", "pending")
-        .eq("tool", "pricing")
-        .maybeSingle();
-
-      if (existing) { processed++; continue; }
+      if (existingTripIds.has(trip.id)) { processed++; continue; }
 
       // Only analyze where action might be warranted
       const shouldAnalyze =
@@ -101,11 +97,14 @@ export async function POST(req: NextRequest) {
 
       if (!shouldAnalyze) { processed++; continue; }
 
+      // Safety cap on Claude calls
+      if (claudeCalls >= MAX_CLAUDE_CALLS) { processed++; continue; }
+
       // Build competitor context
-      const relevantCompetitors = competitors?.filter(c =>
+      const relevantCompetitors = competitors.filter(c =>
         c.trip_type === trip.trip_type || c.region === trip.region
       );
-      const competitorPrices = relevantCompetitors?.length
+      const competitorPrices = relevantCompetitors.length
         ? relevantCompetitors.map(c => `${c.competitor_name} (${c.product_name || "similar"}): $${c.last_price_usd?.toLocaleString()}`).join("; ")
         : undefined;
 
@@ -117,9 +116,10 @@ export async function POST(req: NextRequest) {
         waitlist_count: waitlistCount,
         capacity_pct: capacityPct,
         current_price_usd: trip.current_price_usd,
-      }, { onConflict: "trip_id, snapshot_date" });
+      }, { onConflict: "trip_id,snapshot_date" });
 
-      // Run Claude analysis
+      claudeCalls++;
+
       const analysis = await analyzeTripPricing({
         trip_name: trip.name,
         trip_type: trip.trip_type,
@@ -157,5 +157,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ success: true, trips_analyzed: processed, recommendations_created: recommendations });
+  return NextResponse.json({
+    success: true,
+    trips_analyzed: processed,
+    recommendations_created: recommendations,
+    claude_calls: claudeCalls,
+  });
 }
