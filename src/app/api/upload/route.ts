@@ -149,60 +149,52 @@ export async function POST(req: NextRequest) {
 
   // --- TRIPS ---
   if (uploadType === "trips") {
+    const withExternalId: Record<string, unknown>[] = [];
+    const withoutExternalId: Record<string, unknown>[] = [];
+
     for (const row of processedRows) {
-      try {
-        const trip = {
-          company_id: company.id,
-          external_id: row["ID"] || row["External ID"] || null,
-          name: row["Trip Name"] || row["Name"],
-          trip_type: (row["Type"] || row["Trip Type"] || "signature").toLowerCase().replace(/\s+/g, "_"),
-          region: row["Region"] || null,
-          departure_date: parseDate(row["Departure Date"] || row["Date"]),
-          return_date: row["Return Date"] ? parseDate(row["Return Date"]) : null,
-          capacity_max: parseInt(row["Capacity"] || row["Max Guests"] || "12"),
-          capacity_min: parseInt(row["Min Guests"] || "1"),
-          base_price_usd: parsePrice(row["Base Price"] || row["Price"]),
-          current_price_usd: parsePrice(row["Current Price"] || row["Price"]),
-          cost_basis_usd: row["Cost Basis"] ? parsePrice(row["Cost Basis"]) : null,
-          target_gross_margin: row["Target Margin"] ? parseFloat(row["Target Margin"]) / 100 : 0.40,
-          status: "open",
-          is_tdf: (row["TDF"] || "").toLowerCase() === "yes",
-          notes: row["Notes"] || null,
-        };
+      const name = row["Trip Name"] || row["Name"];
+      if (!name) { errors.push(`Row missing trip name`); continue; }
+      const departure_date = parseDate(row["Departure Date"] || row["Date"]) || "2026-01-01";
+      const trip = {
+        company_id: company.id,
+        external_id: row["ID"] || row["External ID"] || null,
+        name,
+        trip_type: (row["Type"] || row["Trip Type"] || "signature").toLowerCase().replace(/\s+/g, "_"),
+        region: row["Region"] || null,
+        departure_date,
+        return_date: row["Return Date"] ? parseDate(row["Return Date"]) || null : null,
+        capacity_max: parseInt(row["Capacity"] || row["Max Guests"] || "12") || 12,
+        capacity_min: parseInt(row["Min Guests"] || "1") || 1,
+        base_price_usd: parsePrice(row["Base Price"] || row["Price"]),
+        current_price_usd: parsePrice(row["Current Price"] || row["Price"]),
+        cost_basis_usd: row["Cost Basis"] ? parsePrice(row["Cost Basis"]) : null,
+        target_gross_margin: row["Target Margin"] ? parseFloat(row["Target Margin"]) / 100 : 0.40,
+        status: "open",
+        is_tdf: (row["TDF"] || "").toLowerCase() === "yes",
+        notes: row["Notes"] || null,
+      };
+      if (trip.external_id) withExternalId.push(trip);
+      else withoutExternalId.push(trip);
+    }
 
-        if (!trip.name) {
-          errors.push(`Row missing trip name: ${JSON.stringify(row)}`);
-          continue;
-        }
-
-        // If no departure_date, use a placeholder
-        if (!trip.departure_date) {
-          trip.departure_date = "2026-01-01";
-        }
-
-        if (trip.external_id) {
-          await supabase.from("trips").upsert(trip, {
-            onConflict: "company_id, external_id",
-            ignoreDuplicates: false,
-          });
-        } else {
-          const { data: existing } = await supabase
-            .from("trips")
-            .select("id")
-            .eq("company_id", company.id)
-            .eq("name", trip.name)
-            .eq("departure_date", trip.departure_date)
-            .maybeSingle();
-          if (!existing) {
-            await supabase.from("trips").insert(trip);
-          } else {
-            await supabase.from("trips").update(trip).eq("id", existing.id);
-          }
-        }
-        inserted++;
-      } catch (err) {
-        errors.push(`Row error: ${err instanceof Error ? err.message : "unknown"}`);
-      }
+    const CHUNK = 500;
+    // Bulk upsert trips that have an external_id
+    for (let i = 0; i < withExternalId.length; i += CHUNK) {
+      const chunk = withExternalId.slice(i, i + CHUNK);
+      const { error } = await supabase.from("trips").upsert(chunk, {
+        onConflict: "company_id, external_id",
+        ignoreDuplicates: false,
+      });
+      if (error) errors.push(`Trip upsert error: ${error.message}`);
+      else inserted += chunk.length;
+    }
+    // Bulk insert trips without external_id (ignore duplicates by name+date)
+    for (let i = 0; i < withoutExternalId.length; i += CHUNK) {
+      const chunk = withoutExternalId.slice(i, i + CHUNK);
+      const { error } = await supabase.from("trips").insert(chunk);
+      if (error) errors.push(`Trip insert error: ${error.message}`);
+      else inserted += chunk.length;
     }
   }
 
@@ -298,34 +290,33 @@ export async function POST(req: NextRequest) {
 
   // --- CLIENTS ---
   else if (uploadType === "clients") {
-    for (const row of processedRows) {
-      try {
-        if (!row["Email"]) continue;
+    const clientRecords = processedRows
+      .filter(row => row["Email"])
+      .map(row => ({
+        company_id: company.id,
+        email: row["Email"].toLowerCase().trim(),
+        first_name: row["First Name"] || row["Name"]?.split(" ")[0] || null,
+        last_name: row["Last Name"] || row["Name"]?.split(" ").slice(1).join(" ") || null,
+        phone: row["Phone"] || null,
+        country: row["Country"] || null,
+        city: row["City"] || null,
+        fitness_level: row["Fitness Level"]?.toLowerCase() || null,
+        total_trips: parseInt(row["Total Trips"] || "0") || 0,
+        total_spend_usd: row["Total Spend"] ? parsePrice(row["Total Spend"]) : 0,
+        last_trip_date: row["Last Trip Date"] ? parseDate(row["Last Trip Date"]) || null : null,
+        notes: row["Notes"] || null,
+        source: "import",
+      }));
 
-        const client = {
-          company_id: company.id,
-          email: row["Email"].toLowerCase().trim(),
-          first_name: row["First Name"] || row["Name"]?.split(" ")[0] || null,
-          last_name: row["Last Name"] || row["Name"]?.split(" ").slice(1).join(" ") || null,
-          phone: row["Phone"] || null,
-          country: row["Country"] || null,
-          city: row["City"] || null,
-          fitness_level: row["Fitness Level"]?.toLowerCase() || null,
-          total_trips: parseInt(row["Total Trips"] || "0"),
-          total_spend_usd: row["Total Spend"] ? parsePrice(row["Total Spend"]) : 0,
-          last_trip_date: row["Last Trip Date"] ? parseDate(row["Last Trip Date"]) : null,
-          notes: row["Notes"] || null,
-          source: "import",
-        };
-
-        await supabase.from("clients").upsert(client, {
-          onConflict: "email",
-          ignoreDuplicates: false,
-        });
-        inserted++;
-      } catch (err) {
-        errors.push(`Client row error: ${err instanceof Error ? err.message : "unknown"}`);
-      }
+    const CHUNK = 500;
+    for (let i = 0; i < clientRecords.length; i += CHUNK) {
+      const chunk = clientRecords.slice(i, i + CHUNK);
+      const { error } = await supabase.from("clients").upsert(chunk, {
+        onConflict: "email",
+        ignoreDuplicates: false,
+      });
+      if (error) errors.push(`Client upsert error: ${error.message}`);
+      else inserted += chunk.length;
     }
   }
 
