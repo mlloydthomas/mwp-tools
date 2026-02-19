@@ -2,7 +2,7 @@
 // Handles Excel/CSV uploads for trips, bookings, clients
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import * as XLSX from "xlsx";
 
 type UploadType = "trips" | "bookings" | "clients" | "hotels" | "trip_templates";
@@ -73,7 +73,7 @@ const FLYBOOK_COLUMN_MAP: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
+  const supabase = createServiceClient();
 
   const formData = await req.formData();
   const file = formData.get("file") as File;
@@ -210,9 +210,10 @@ export async function POST(req: NextRequest) {
   else if (uploadType === "bookings") {
     for (const row of processedRows) {
       try {
-        // Try to find the trip by external ID or name
-        const tripRef = row["Trip ID"] || row["Trip Name"];
+        // Try to find matching trip record - but don't fail if not found
+        // TBT historical bookings use dated names that won't match generic trip records
         let tripId: string | null = null;
+        const tripNameRaw = row["Trip Name"] || row["Trip"] || "";
 
         if (row["Trip ID"]) {
           const { data: trip } = await supabase
@@ -220,40 +221,65 @@ export async function POST(req: NextRequest) {
             .select("id")
             .eq("company_id", company.id)
             .eq("external_id", row["Trip ID"])
-            .single();
+            .maybeSingle();
           tripId = trip?.id || null;
-        } else if (row["Trip Name"]) {
-          const { data: trip } = await supabase
+        }
+
+        if (!tripId && tripNameRaw) {
+          // Try exact match first, then partial
+          const { data: tripExact } = await supabase
             .from("trips")
             .select("id")
             .eq("company_id", company.id)
-            .ilike("name", `%${row["Trip Name"]}%`)
-            .single();
-          tripId = trip?.id || null;
+            .ilike("name", tripNameRaw)
+            .maybeSingle();
+          tripId = tripExact?.id || null;
+
+          if (!tripId) {
+            // Try matching on first ~30 chars of trip name
+            const shortName = tripNameRaw.substring(0, 30).replace(/ (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec).*$/i, "").trim();
+            if (shortName.length > 5) {
+              const { data: tripFuzzy } = await supabase
+                .from("trips")
+                .select("id")
+                .eq("company_id", company.id)
+                .ilike("name", `%${shortName}%`)
+                .maybeSingle();
+              tripId = tripFuzzy?.id || null;
+            }
+          }
         }
 
-        if (!tripId) {
-          errors.push(`Could not find trip for booking: ${tripRef}`);
-          continue;
-        }
+        const rawBookingId = row["Booking ID"] || row["ID"] || null;
+        const rawPrice = row["Price Paid"] || row["Revenue"] || null;
+        const rawDate = row["Booking Date"] || row["Trip Date"] || null;
+        const rawStatus = row["Status"] || "confirmed";
+        const rawPrivate = row["Private"] || "";
 
-        const booking = {
-          trip_id: tripId,
+        const booking: Record<string, unknown> = {
           company_id: company.id,
-          external_booking_id: row["Booking ID"] || row["ID"] || null,
-          guest_count: parseInt(row["Guests"] || row["Guest Count"] || "1"),
-          price_paid_usd: row["Price Paid"] ? parsePrice(row["Price Paid"]) : null,
-          booking_date: row["Booking Date"] ? parseDate(row["Booking Date"]) : null,
-          status: (row["Status"] || "confirmed").toLowerCase(),
+          trip_id: tripId,                    // nullable - OK if no match found
+          trip_name: tripNameRaw || null,      // store raw name for reference
+          trip_type: row["Type"] || null,      // pass through segment if provided
+          external_booking_id: rawBookingId ? String(rawBookingId) : null,
+          guest_count: parseInt(String(row["Guests"] || row["Guest Count"] || "1")) || 1,
+          price_paid_usd: rawPrice ? parsePrice(String(rawPrice)) : null,
+          booking_date: rawDate ? parseDate(String(rawDate)) || null : null,
+          status: String(rawStatus).toLowerCase(),
           client_email: row["Email"] || row["Client Email"] || null,
           client_name: row["Name"] || row["Client Name"] || null,
-          is_private: (row["Private"] || "").toLowerCase() === "yes",
+          is_private: String(rawPrivate).toLowerCase() === "yes",
         };
 
-        await supabase.from("bookings").upsert(booking, {
-          onConflict: "external_booking_id",
-          ignoreDuplicates: true,
-        });
+        // Upsert by external_booking_id when available, otherwise just insert
+        if (booking.external_booking_id) {
+          await supabase.from("bookings").upsert(booking, {
+            onConflict: "external_booking_id",
+            ignoreDuplicates: true,
+          });
+        } else {
+          await supabase.from("bookings").insert(booking);
+        }
         inserted++;
       } catch (err) {
         errors.push(`Booking row error: ${err instanceof Error ? err.message : "unknown"}`);
@@ -332,8 +358,9 @@ export async function POST(req: NextRequest) {
 }
 
 function parseDate(value: string): string {
-  if (!value) return "";
-  const str = value.toString().trim();
+  if (!value || value === null || value === undefined) return "";
+  const str = String(value).trim();
+  if (!str || str === "null" || str === "undefined") return "";
   
   // Flybook known quirk: exports dates as "MM/DD/YYYY" or "M/D/YYYY" 
   // but Excel sometimes garbles them to serial numbers (e.g. "45000")
@@ -370,5 +397,6 @@ function parseDate(value: string): string {
 }
 
 function parsePrice(value: string): number {
-  return parseFloat(value.toString().replace(/[$,\s]/g, "")) || 0;
+  if (!value || value === null || value === undefined) return 0;
+  return parseFloat(String(value).replace(/[$,\s]/g, "")) || 0;
 }
