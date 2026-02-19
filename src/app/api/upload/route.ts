@@ -208,82 +208,91 @@ export async function POST(req: NextRequest) {
 
   // --- BOOKINGS ---
   else if (uploadType === "bookings") {
+    // Fetch ALL trips for this company once, build a lookup map - avoids N+1 queries
+    const { data: allTrips } = await supabase
+      .from("trips")
+      .select("id, name, external_id")
+      .eq("company_id", company.id);
+
+    const tripByExternalId = new Map<string, string>();
+    const tripByName = new Map<string, string>();
+    for (const t of (allTrips || [])) {
+      if (t.external_id) tripByExternalId.set(t.external_id, t.id);
+      if (t.name) tripByName.set(t.name.toLowerCase().trim(), t.id);
+    }
+
+    // Build all booking records in memory first
+    const toInsert: Record<string, unknown>[] = [];
+    const toUpsert: Record<string, unknown>[] = [];
+
     for (const row of processedRows) {
-      try {
-        // Try to find matching trip record - but don't fail if not found
-        // TBT historical bookings use dated names that won't match generic trip records
-        let tripId: string | null = null;
-        const tripNameRaw = row["Trip Name"] || row["Trip"] || "";
+      const tripNameRaw = row["Trip Name"] || row["Trip"] || "";
+      let tripId: string | null = null;
 
-        if (row["Trip ID"]) {
-          const { data: trip } = await supabase
-            .from("trips")
-            .select("id")
-            .eq("company_id", company.id)
-            .eq("external_id", row["Trip ID"])
-            .maybeSingle();
-          tripId = trip?.id || null;
-        }
-
-        if (!tripId && tripNameRaw) {
-          // Try exact match first, then partial
-          const { data: tripExact } = await supabase
-            .from("trips")
-            .select("id")
-            .eq("company_id", company.id)
-            .ilike("name", tripNameRaw)
-            .maybeSingle();
-          tripId = tripExact?.id || null;
-
-          if (!tripId) {
-            // Try matching on first ~30 chars of trip name
-            const shortName = tripNameRaw.substring(0, 30).replace(/ (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec).*$/i, "").trim();
-            if (shortName.length > 5) {
-              const { data: tripFuzzy } = await supabase
-                .from("trips")
-                .select("id")
-                .eq("company_id", company.id)
-                .ilike("name", `%${shortName}%`)
-                .maybeSingle();
-              tripId = tripFuzzy?.id || null;
+      // Look up trip from in-memory map (no DB calls per row)
+      if (row["Trip ID"] && tripByExternalId.has(row["Trip ID"])) {
+        tripId = tripByExternalId.get(row["Trip ID"])!;
+      }
+      if (!tripId && tripNameRaw) {
+        const lower = tripNameRaw.toLowerCase().trim();
+        // Exact match
+        tripId = tripByName.get(lower) || null;
+        // Prefix match - strip date suffix (e.g. "Epic Trans Pyrenees Aug 13, 2022")
+        if (!tripId) {
+          const stripped = lower.replace(/\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d+,?\s*\d{4}.*$/i, "").trim();
+          for (const [name, id] of tripByName) {
+            if (name.includes(stripped) || stripped.includes(name)) {
+              tripId = id;
+              break;
             }
           }
         }
-
-        const rawBookingId = row["Booking ID"] || row["ID"] || null;
-        const rawPrice = row["Price Paid"] || row["Revenue"] || null;
-        const rawDate = row["Booking Date"] || row["Trip Date"] || null;
-        const rawStatus = row["Status"] || "confirmed";
-        const rawPrivate = row["Private"] || "";
-
-        const booking: Record<string, unknown> = {
-          company_id: company.id,
-          trip_id: tripId,                    // nullable - OK if no match found
-          trip_name: tripNameRaw || null,      // store raw name for reference
-          trip_type: row["Type"] || null,      // pass through segment if provided
-          external_booking_id: rawBookingId ? String(rawBookingId) : null,
-          guest_count: parseInt(String(row["Guests"] || row["Guest Count"] || "1")) || 1,
-          price_paid_usd: rawPrice ? parsePrice(String(rawPrice)) : null,
-          booking_date: rawDate ? parseDate(String(rawDate)) || null : null,
-          status: String(rawStatus).toLowerCase(),
-          client_email: row["Email"] || row["Client Email"] || null,
-          client_name: row["Name"] || row["Client Name"] || null,
-          is_private: String(rawPrivate).toLowerCase() === "yes",
-        };
-
-        // Upsert by external_booking_id when available, otherwise just insert
-        if (booking.external_booking_id) {
-          await supabase.from("bookings").upsert(booking, {
-            onConflict: "external_booking_id",
-            ignoreDuplicates: true,
-          });
-        } else {
-          await supabase.from("bookings").insert(booking);
-        }
-        inserted++;
-      } catch (err) {
-        errors.push(`Booking row error: ${err instanceof Error ? err.message : "unknown"}`);
       }
+
+      const rawBookingId = row["Booking ID"] || row["ID"] || null;
+      const rawPrice = row["Price Paid"] || row["Revenue"] || null;
+      const rawDate = row["Booking Date"] || row["Trip Date"] || null;
+
+      const booking: Record<string, unknown> = {
+        company_id: company.id,
+        trip_id: tripId,
+        trip_name: tripNameRaw || null,
+        trip_type: row["Type"] || null,
+        external_booking_id: rawBookingId ? String(rawBookingId) : null,
+        guest_count: parseInt(String(row["Guests"] || "1")) || 1,
+        price_paid_usd: rawPrice ? parsePrice(String(rawPrice)) : null,
+        booking_date: rawDate ? parseDate(String(rawDate)) || null : null,
+        status: String(row["Status"] || "confirmed").toLowerCase(),
+        client_email: row["Email"] || row["Client Email"] || null,
+        client_name: row["Name"] || row["Client Name"] || null,
+        is_private: String(row["Private"] || "").toLowerCase() === "yes",
+      };
+
+      if (booking.external_booking_id) {
+        toUpsert.push(booking);
+      } else {
+        toInsert.push(booking);
+      }
+    }
+
+    // Bulk upsert records with IDs (in chunks of 500)
+    const CHUNK = 500;
+    for (let i = 0; i < toUpsert.length; i += CHUNK) {
+      const chunk = toUpsert.slice(i, i + CHUNK);
+      const { error } = await supabase.from("bookings").upsert(chunk, {
+        onConflict: "external_booking_id",
+        ignoreDuplicates: true,
+      });
+      if (error) errors.push(`Upsert error: ${error.message}`);
+      else inserted += chunk.length;
+    }
+
+    // Bulk insert records without IDs (in chunks of 500)
+    for (let i = 0; i < toInsert.length; i += CHUNK) {
+      const chunk = toInsert.slice(i, i + CHUNK);
+      const { error } = await supabase.from("bookings").insert(chunk);
+      if (error) errors.push(`Insert error: ${error.message}`);
+      else inserted += chunk.length;
     }
   }
 
