@@ -2,7 +2,7 @@
 // OAuth callback - exchanges code for tokens, syncs athlete data
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { exchangeStravaCode, getAthleteStats } from "@/lib/strava";
 
 export async function GET(req: NextRequest) {
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   }
 
   const [clientId] = state.split(":");
-  const supabase = await createClient();
+  const supabase = createServiceClient();
 
   try {
     const tokens = await exchangeStravaCode(code);

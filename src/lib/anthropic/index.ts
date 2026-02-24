@@ -31,18 +31,26 @@ export async function analyzeTripPricing(params: {
   cost_basis_usd: number;
   target_margin: number;
   capacity_max: number;
+  capacity_min: number;
   bookings_count: number;
   capacity_pct: number;
   waitlist_count: number;
-  historical_velocity?: string; // e.g. "tracking 40% ahead of last year"
-  competitor_prices?: string; // e.g. "Competitor A: $3,200; Competitor B: $2,800"
+  company_slug: string;           // "tbt" or "aex"
+  guide_ratio_note?: string;      // TBT guide ratio context
+  historical_velocity?: string;
+  competitor_prices?: string;
 }): Promise<PricingRecommendation> {
-  const prompt = `You are a revenue management expert for Milky Way Park, a premium adventure travel company.
+  const isTBT = params.company_slug === "tbt";
+  const isPrivate = params.trip_type === "private" || params.trip_type === "private_international";
+  const is8000m = params.trip_type === "8000m" || params.trip_type === "everest";
+
+  const prompt = `You are a revenue management expert for a premium adventure travel company.
 Analyze this trip and provide a pricing recommendation.
 
 TRIP DETAILS:
 - Name: ${params.trip_name}
 - Type: ${params.trip_type}
+- Company: ${isTBT ? "Thomson Bike Tours (TBT)" : "Alpenglow Expeditions (AEX)"}
 - Departure: ${params.departure_date} (${params.days_until_departure} days away)
 - Current price: $${params.current_price_usd.toLocaleString()}
 - Cost basis: $${params.cost_basis_usd.toLocaleString()}
@@ -50,29 +58,38 @@ TRIP DETAILS:
 - Current margin: ${(((params.current_price_usd - params.cost_basis_usd) / params.current_price_usd) * 100).toFixed(1)}%
 
 CAPACITY:
+- Minimum to run: ${params.capacity_min} guests${isTBT && !isPrivate ? " (trip cancels if not met 6 weeks out)" : ""}
 - Maximum capacity: ${params.capacity_max} guests
-- Current bookings: ${params.bookings_count} (${(params.capacity_pct * 100).toFixed(0)}% full)
+- Current bookings: ${params.bookings_count} (${(params.capacity_pct * 100).toFixed(0)}% of max)
 - Waitlist: ${params.waitlist_count}
 ${params.historical_velocity ? `- Historical velocity: ${params.historical_velocity}` : ""}
-
-${params.competitor_prices ? `COMPETITOR PRICING:\n${params.competitor_prices}` : ""}
+${params.guide_ratio_note ? `\nGUIDE RATIO CONTEXT:\n${params.guide_ratio_note}` : ""}
+${params.competitor_prices ? `\nCOMPETITOR PRICING:\n${params.competitor_prices}` : ""}
 
 PRICING PRINCIPLES:
-- These are premium, word-of-mouth businesses. Price changes should feel considered, not opportunistic.
-- TDF trips have inelastic demand and significant waitlists; be more aggressive with pricing.
-- Private trips should target 40%+ gross margins.
-- Signature/open enrollment trips are more price-sensitive (marketing weakness means we can't easily replace churned customers).
-- If a trip is >80% full and >60 days out, a price increase is almost always warranted.
-- If a trip is <30% full and <45 days out, consider a modest reduction or promotion.
+- Both companies are premium, word-of-mouth businesses. Price changes must feel considered, not opportunistic.
+- Recommend no change unless there is a clear, defensible reason.
+${isTBT ? `
+TBT-SPECIFIC:
+- TDF trips have inelastic demand and frequent waitlists — be more aggressive with increases.
+- Open enrollment trips run on an 8:1 client-to-guide ratio. Margins are best at exactly 8, 16, 24, 32, 40 guests.
+- A trip at 9, 17, 25, or 33 guests pays the same staff cost as 8, 16, 24, 32 — flag this.
+- If a trip risks falling below 6 guests with <6 weeks to go, flag cancellation risk.
+- Training camps and gravel are more price-sensitive than TDF.` : `
+AEX-SPECIFIC:
+- 8000m and Everest trips (max 8 guests) command premium pricing — scarcity is a feature.
+- Most AEX bookings arrive 90-180 days before departure. Low fill at 270+ days is normal.
+- If a trip is under 50% full within 6 months of departure, that warrants attention.`}
+${isPrivate ? `\nPRIVATE TRIP: Target 40%+ gross margin. Higher pricing flexibility than open enrollment.` : ""}
 
-Respond in this exact JSON format:
+Respond ONLY in this exact JSON format (no markdown, no preamble):
 {
-  "should_change": true/false,
+  "should_change": true or false,
   "recommended_price_usd": number,
-  "price_change_pct": number (positive = increase, negative = decrease),
-  "urgency": "urgent|high|normal|low",
+  "price_change_pct": number,
+  "urgency": "urgent" or "high" or "normal" or "low",
   "reasoning": "2-3 sentence explanation for the human reviewer",
-  "signals": ["signal 1", "signal 2", "signal 3"] (bullet-point observations that drove the recommendation)
+  "signals": ["signal 1", "signal 2", "signal 3"]
 }`;
 
   const response = await anthropic.messages.create({
@@ -81,10 +98,22 @@ Respond in this exact JSON format:
     messages: [{ role: "user", content: prompt }],
   });
 
-  const text =
-    response.content[0].type === "text" ? response.content[0].text : "";
+  const text = response.content[0].type === "text" ? response.content[0].text : "";
   const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
-  return JSON.parse(cleaned) as PricingRecommendation;
+
+  try {
+    return JSON.parse(cleaned) as PricingRecommendation;
+  } catch {
+    console.error("analyzeTripPricing: failed to parse Claude response:", cleaned);
+    return {
+      should_change: false,
+      recommended_price_usd: params.current_price_usd,
+      price_change_pct: 0,
+      urgency: "low",
+      reasoning: "Analysis failed to parse — review manually.",
+      signals: [],
+    };
+  }
 }
 
 // ---- ENGAGEMENT AGENT ----

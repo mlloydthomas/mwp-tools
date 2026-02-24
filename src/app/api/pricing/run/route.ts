@@ -7,7 +7,55 @@ import { analyzeTripPricing } from "@/lib/anthropic";
 import { differenceInDays, parseISO } from "date-fns";
 
 const EXCLUDED_TYPES = ["local", "via", "rental", "rental_other"];
-const MAX_CLAUDE_CALLS = 20; // Safety cap to avoid timeout
+const MAX_CLAUDE_CALLS = 20;
+
+// Derive correct min/max capacity from trip_type — mirrors logic in trips/route.ts
+function deriveCapacity(
+  tripType: string,
+  companySlug: string,
+  dbMin: number,
+  dbMax: number
+): { capacity_min: number; capacity_max: number } {
+  if (companySlug === "aex") {
+    if (tripType === "8000m" || tripType === "everest") {
+      return { capacity_min: 4, capacity_max: 8 };
+    }
+    return { capacity_min: 4, capacity_max: dbMax > 0 && dbMax <= 12 ? dbMax : 12 };
+  }
+  if (companySlug === "tbt") {
+    if (tripType === "private") {
+      return { capacity_min: 1, capacity_max: dbMax > 0 ? dbMax : 12 };
+    }
+    return { capacity_min: 6, capacity_max: dbMax > 0 ? dbMax : 40 };
+  }
+  return { capacity_min: dbMin || 1, capacity_max: dbMax || 12 };
+}
+
+// TBT guide ratio context for the AI prompt
+// 8:1 client-to-guide ratio; optimal at multiples of 8
+function buildGuideRatioNote(bookings: number, tripType: string): string {
+  if (tripType === "private" || bookings <= 0) return "";
+
+  const guides = Math.ceil(bookings / 8);
+  const optimal = guides * 8;
+  const prevOptimal = (guides - 1) * 8;
+  const inflection = bookings - prevOptimal; // 1 or 2 = just crossed a guide threshold
+  const slack = optimal - bookings;
+
+  if (slack === 0) {
+    return `Guide ratio: ${guides} guide${guides !== 1 ? "s" : ""} for ${bookings} guests — at optimal capacity.`;
+  }
+  if (inflection === 1 || inflection === 2) {
+    return (
+      `MARGIN ALERT: ${bookings} guests requires ${guides} guides (same staff cost as ${prevOptimal}). ` +
+      `Fill ${slack} more spots to reach ${optimal} guests and significantly improve margin.`
+    );
+  }
+  if (slack <= 3) {
+    return `Margin tip: ${slack} more guest${slack !== 1 ? "s" : ""} reaches next guide-optimum (${optimal} guests/${guides} guides).`;
+  }
+  return `Guide ratio: ${guides} guide${guides !== 1 ? "s" : ""} for ${bookings} guests (next optimum: ${optimal}).`;
+}
 
 export async function POST(req: NextRequest) {
   const supabase = createServiceClient();
@@ -31,7 +79,6 @@ export async function POST(req: NextRequest) {
   let processed = 0;
   let recommendations = 0;
 
-  // Get all open trips for current year
   const { data: allTrips, error } = await supabase
     .from("trips")
     .select("*")
@@ -41,19 +88,21 @@ export async function POST(req: NextRequest) {
     .order("departure_date", { ascending: true });
 
   if (error || !allTrips?.length) {
-    return NextResponse.json({ success: true, trips_analyzed: 0, recommendations_created: 0, message: "No open trips found" });
+    return NextResponse.json({
+      success: true, trips_analyzed: 0, recommendations_created: 0, message: "No open trips found",
+    });
   }
 
-  // Filter excluded types in JS
   const trips = allTrips.filter(t => !EXCLUDED_TYPES.includes(t.trip_type));
 
   if (!trips.length) {
-    return NextResponse.json({ success: true, trips_analyzed: 0, recommendations_created: 0, message: "No qualifying trips found" });
+    return NextResponse.json({
+      success: true, trips_analyzed: 0, recommendations_created: 0, message: "No qualifying trips found",
+    });
   }
 
   const tripIds = trips.map(t => t.id);
 
-  // Bulk fetch bookings, waitlist, existing recs in parallel
   const [bookingsRes, waitlistRes, existingRecsRes, competitorsRes] = await Promise.all([
     supabase.from("bookings").select("trip_id, guest_count").in("trip_id", tripIds).eq("status", "confirmed"),
     supabase.from("bookings").select("trip_id, guest_count").in("trip_id", tripIds).eq("status", "waitlist"),
@@ -78,37 +127,49 @@ export async function POST(req: NextRequest) {
 
   for (const trip of trips) {
     try {
-      // Skip trips with no price set
       if (!trip.current_price_usd || trip.current_price_usd <= 0) { processed++; continue; }
+      if (existingTripIds.has(trip.id)) { processed++; continue; }
+
+      const { capacity_min, capacity_max } = deriveCapacity(
+        trip.trip_type, companySlug, trip.capacity_min || 1, trip.capacity_max || 12
+      );
 
       const bookingsCount = bookingMap[trip.id] || 0;
       const waitlistCount = waitlistMap[trip.id] || 0;
-      const capacityPct = bookingsCount / (trip.capacity_max || 12);
+      const capacityPct = bookingsCount / capacity_max;
       const daysUntilDeparture = differenceInDays(parseISO(trip.departure_date), today);
 
-      // Skip if already has a pending recommendation
-      if (existingTripIds.has(trip.id)) { processed++; continue; }
+      // Determine if this trip warrants AI analysis
+      const isTBT = companySlug === "tbt";
+      const isPrivate = trip.trip_type === "private" || trip.trip_type === "private_international";
 
-      // Only analyze where action might be warranted
+      // TBT: flag cancellation risk (below min with <6 weeks to go)
+      const cancellationRisk = isTBT && !isPrivate && bookingsCount < capacity_min && daysUntilDeparture < 42;
+
       const shouldAnalyze =
-        capacityPct >= 0.6 ||
+        cancellationRisk ||
         waitlistCount > 0 ||
-        (capacityPct < 0.3 && daysUntilDeparture < 90);
+        capacityPct >= 0.60 ||
+        (capacityPct < 0.30 && daysUntilDeparture < 60) ||
+        (capacityPct < 0.50 && daysUntilDeparture < 180) ||
+        (capacityPct < 0.40 && daysUntilDeparture < 270);
 
       if (!shouldAnalyze) { processed++; continue; }
-
-      // Safety cap on Claude calls
       if (claudeCalls >= MAX_CLAUDE_CALLS) { processed++; continue; }
 
-      // Build competitor context
       const relevantCompetitors = competitors.filter(c =>
         c.trip_type === trip.trip_type || c.region === trip.region
       );
       const competitorPrices = relevantCompetitors.length
-        ? relevantCompetitors.map(c => `${c.competitor_name} (${c.product_name || "similar"}): $${c.last_price_usd?.toLocaleString()}`).join("; ")
+        ? relevantCompetitors.map(c =>
+            `${c.competitor_name} (${c.product_name || "similar"}): $${c.last_price_usd?.toLocaleString()}`
+          ).join("; ")
         : undefined;
 
-      // Snapshot today
+      const guideRatioNote = isTBT && !isPrivate
+        ? buildGuideRatioNote(bookingsCount, trip.trip_type)
+        : undefined;
+
       await supabase.from("booking_snapshots").upsert({
         trip_id: trip.id,
         snapshot_date: todayStr,
@@ -128,15 +189,21 @@ export async function POST(req: NextRequest) {
         current_price_usd: trip.current_price_usd,
         cost_basis_usd: trip.cost_basis_usd || trip.current_price_usd * 0.6,
         target_margin: trip.target_gross_margin || 0.4,
-        capacity_max: trip.capacity_max || 12,
+        capacity_max,
+        capacity_min,
         bookings_count: bookingsCount,
         capacity_pct: capacityPct,
         waitlist_count: waitlistCount,
+        company_slug: companySlug,
+        guide_ratio_note: guideRatioNote,
         competitor_prices: competitorPrices,
       });
 
       if (analysis.should_change) {
         recommendations++;
+        const direction = analysis.price_change_pct > 0 ? "↑" : "↓";
+        const pct = Math.abs(analysis.price_change_pct * 100).toFixed(0);
+        const word = analysis.price_change_pct > 0 ? "increase" : "reduction";
         await supabase.from("ai_recommendations").insert({
           company_id: company.id,
           tool: "pricing",
@@ -145,11 +212,12 @@ export async function POST(req: NextRequest) {
           trip_id: trip.id,
           current_price_usd: trip.current_price_usd,
           recommended_price_usd: analysis.recommended_price_usd,
-          title: `${trip.name}: ${analysis.price_change_pct > 0 ? "↑" : "↓"} ${Math.abs(analysis.price_change_pct * 100).toFixed(0)}% price ${analysis.price_change_pct > 0 ? "increase" : "reduction"} recommended`,
+          title: `${trip.name}: ${direction} ${pct}% price ${word} recommended`,
           ai_reasoning: analysis.reasoning,
           draft_content: JSON.stringify(analysis.signals),
         });
       }
+
       processed++;
     } catch (err) {
       console.error(`Error analyzing trip ${trip.name}:`, err);

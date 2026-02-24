@@ -1,10 +1,10 @@
 // /api/pricing/recommendations - GET list, PATCH update status
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 
 export async function GET(req: NextRequest) {
-  const supabase = await createClient();
+  const supabase = createServiceClient();
   const { searchParams } = new URL(req.url);
   const tool = searchParams.get("tool");
   const status = searchParams.get("status") || "pending";
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const supabase = await createClient();
+  const supabase = createServiceClient();
   const body = await req.json();
   const { id, status, final_content, reviewed_by } = body;
 

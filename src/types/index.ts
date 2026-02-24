@@ -125,7 +125,8 @@ export type AiRecommendation = {
   trip?: Trip;
   client?: Client;
   inquiry?: Inquiry;
-  competitor_product?: CompetitorProduct;company?: { short_name: string; name: string };
+  competitor_product?: CompetitorProduct;
+  company?: { short_name: string; name: string };
 };
 
 // ---- CLIENT ENGAGEMENT ----

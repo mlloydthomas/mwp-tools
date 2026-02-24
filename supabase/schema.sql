@@ -61,10 +61,14 @@ create table bookings (
   status text default 'confirmed',     -- 'confirmed', 'waitlist', 'cancelled', 'inquiry'
   client_email text,
   client_name text,
+  trip_name text,                      -- denormalized trip name from booking system
   is_private boolean default false,
   notes text,
   created_at timestamptz default now()
 );
+create unique index if not exists idx_bookings_external_id 
+  on bookings(external_booking_id) 
+  where external_booking_id is not null;
 
 -- Booking snapshots (daily record of capacity fill per trip - drives velocity analysis)
 create table booking_snapshots (
