@@ -1,333 +1,319 @@
 // ============================================================
-// Salesforce API Client — MWP Tools / Thomson Bike Tours
+// Competitor Price Scraper — Vercel-compatible (no Puppeteer)
 //
-// Thomson uses Sugati Travel CRM, which runs on Salesforce.
-// Instance: thomsonbiketours.lightning.force.com
+// Uses fetch() + regex to extract prices from competitor pages.
+// Works in Vercel serverless functions — no Chrome binary needed.
 //
-// Auth: OAuth 2.0 Username-Password flow
-//   - Does NOT require a Connected App — uses Salesforce's built-in CLI app
-//   - MFA on the web UI does NOT affect API auth (completely separate)
-//   - Requires: username + password + security token
-//   - Security token: generated in SF → top-right avatar → Settings →
-//     "Reset My Security Token" → emailed to you
-//
-// Field names confirmed from Sugati Travel screenshot (Feb 2026):
-//   Opportunity object fields:
-//     Pax__c                    — integer guest count
-//     Booking_Date__c           — date booked
-//     Departure_Date__c         — trip departure date  
-//     Lead_Group_Member_Name__c — lead guest name
-//     Booking_Status__c         — "Confirmed", "Pending Confirmation"
-//     Tour_Type__c              — "Cycling Road", "Cycling Gravel", etc
-//     Tour__c                   — lookup to Tour__c object
-//     Tour__r.Name              — related Tour record name
-//     Amount                    — price in USD
+// Limitation: won't work on pages that load prices via JavaScript
+// after page load. Competitors that do this (B&R, Trek Travel) are
+// flagged as "quote-only" in the seed data and return null here.
+// Their prices should be updated manually in the competitor tab.
 // ============================================================
 
-export type SalesforceConfig = {
-  instanceUrl: string;    // e.g. https://thomsonbiketours.my.salesforce.com
-  username: string;       // SF login email
-  password: string;       // SF password
-  securityToken: string;  // Security token from SF Settings → Reset My Security Token
-  // clientId/clientSecret are OPTIONAL — if not provided, we use Salesforce's
-  // built-in "Salesforce CLI" connected app which doesn't need approval from Thomson
-  clientId?: string;
-  clientSecret?: string;
-};
+import { createServiceClient } from "@/lib/supabase/server";
+import { analyzeCompetitorPriceChange } from "@/lib/anthropic";
+import type { CompetitorProduct } from "@/types";
 
-export type SalesforceAuthResult = {
-  access_token: string;
-  instance_url: string;
-  token_type: string;
-};
+// ── PRICE EXTRACTION ──────────────────────────────────────────────────────────
 
-// A booking as returned from the Salesforce Opportunity query.
-// Field names confirmed from Sugati Travel's Thomson SF instance (screenshot Feb 2026).
-export type SFOpportunity = {
-  Id: string;
-  Name: string;                           // "2026 Trans Dolomites Jun 06 - Kameron Shahid"
-  Booking_Date__c?: string | null;        // "2026-02-23"
-  Departure_Date__c?: string | null;      // "2026-06-06"
-  Pax__c?: number | null;                 // integer guest count
-  Amount?: number | null;                 // price in USD
-  Booking_Status__c?: string | null;      // "Confirmed", "Pending Confirmation"
-  StageName?: string | null;              // "Booked", "In Progress"
-  Lead_Group_Member_Name__c?: string | null; // "Kameron Shahid"
-  Tour_Type__c?: string | null;           // "Cycling Road"
-  Tour__r?: { Name: string; Id?: string } | null;
-  Tour__c?: string | null;
-  Account?: { Name: string } | null;
-};
+// Ordered by specificity — more specific patterns tried first
+const PRICE_PATTERNS = [
+  /from\s+\$\s*([\d,]+(?:\.\d{2})?)/gi,         // "from $3,200"
+  /starting\s+(?:at\s+)?\$\s*([\d,]+)/gi,        // "starting at $3,200"
+  /price[:\s]+\$\s*([\d,]+)/gi,                   // "Price: $3,200"
+  /cost[:\s]+\$\s*([\d,]+)/gi,                    // "Cost: $3,200"
+  /per\s+person[:\s]+\$\s*([\d,]+)/gi,            // "per person: $3,200"
+  /\$\s*([\d,]+(?:\.\d{2})?)\s*(?:per person|pp)/gi, // "$3,200 per person"
+  /USD\s*([\d,]+)/gi,                             // USD 3200
+  /US\$\s*([\d,]+)/gi,                            // US$3,200
+  /€\s*([\d,]+)/gi,                               // €180,000 (Furtenbach etc)
+  /EUR\s*([\d,]+)/gi,                             // EUR 180,000
+  /\$\s*([\d,]+(?:\.\d{2})?)/g,                   // $3,200 (generic fallback)
+  /([\d,]+)\s+(?:USD|per person)/gi,              // 3200 USD
+];
 
-export type SFTour = {
-  Id: string;
-  Name: string;
-  Departure_Date__c?: string | null;
-  Tour_Type__c?: string | null;
-  Max_Pax__c?: number | null;
-  Min_Pax__c?: number | null;
-};
+// Exchange rates (approximate — updated periodically in the code)
+const EUR_TO_USD = 1.08;
 
-// ── AUTHENTICATION ────────────────────────────────────────────────────────────
+function extractPrice(text: string, customPattern?: string): number | null {
+  const patterns: RegExp[] = customPattern
+    ? [new RegExp(customPattern, "gi"), ...PRICE_PATTERNS]
+    : PRICE_PATTERNS;
 
-// Salesforce's built-in Connected App client ID.
-// This is the "Salesforce CLI" app — publicly known and safe to use for internal tools.
-// It allows username+password+token auth without needing Thomson to create their own
-// Connected App. This is the recommended approach for internal API integrations.
-const DEFAULT_SF_CLIENT_ID =
-  "3MVG9pe2TCkl1RCiMm9OkK8jNFxZwME7ELIpRHFonWGvgfLYGwClHBUqFpNxzMI4PYhzBYXRRV7yH4FnXOFSB";
-const DEFAULT_SF_CLIENT_SECRET = ""; // not required for this app
+  const candidates: number[] = [];
 
-/**
- * Authenticate with Salesforce using the OAuth 2.0 Username-Password flow.
- *
- * Key facts:
- *  - MFA on the Salesforce web UI does NOT affect this. API auth is separate.
- *  - The password sent is: yourPassword + yourSecurityToken (no space between them)
- *  - The security token is different from your password — generate it in
- *    Salesforce Settings → "Reset My Security Token"
- *  - This works even if Thomson has MFA enforced on the web login
- */
-export async function authenticateSalesforce(
-  config: SalesforceConfig
-): Promise<SalesforceAuthResult> {
-  const tokenUrl = "https://login.salesforce.com/services/oauth2/token";
+  for (const pattern of patterns) {
+    const p = new RegExp(pattern.source, pattern.flags);
+    let match: RegExpExecArray | null;
+    while ((match = p.exec(text)) !== null) {
+      const raw = match[1] || match[0];
+      const numStr = raw.replace(/[^0-9.]/g, "");
+      const num = parseFloat(numStr);
 
-  const clientId = config.clientId || DEFAULT_SF_CLIENT_ID;
-  const clientSecret = config.clientSecret || DEFAULT_SF_CLIENT_SECRET;
-
-  const params = new URLSearchParams({
-    grant_type: "password",
-    client_id: clientId,
-    ...(clientSecret ? { client_secret: clientSecret } : {}),
-    username: config.username,
-    // Salesforce concatenates password + security token (no separator)
-    password: config.password + config.securityToken,
-  });
-
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-    signal: AbortSignal.timeout(20_000),
-  });
-
-  const data = await response.json();
-
-  if (!response.ok || data.error) {
-    const errorDesc = data.error_description || data.error || "Unknown error";
-
-    // Provide specific guidance for common errors
-    if (errorDesc.toLowerCase().includes("authentication failure")) {
-      throw new Error(
-        "Wrong username, password, or security token. " +
-        "Note: the security token is SEPARATE from your password. " +
-        "Generate it in Salesforce: click your avatar (top-right) → Settings → " +
-        '"Reset My Security Token" → it will be emailed to you.'
-      );
+      // Adventure trip price range: $500 to $250,000
+      // (Furtenbach Signature is ~$222K, AEX Everest is ~$85K)
+      if (num >= 500 && num <= 250_000) {
+        // If it was a EUR price, convert to USD
+        const isEur = pattern.source.startsWith("€") || pattern.source.startsWith("EUR");
+        candidates.push(isEur ? Math.round(num * EUR_TO_USD) : num);
+      }
     }
-    if (errorDesc.toLowerCase().includes("ip restricted") || errorDesc.toLowerCase().includes("blocked")) {
-      throw new Error(
-        "Salesforce IP restrictions are blocking the connection. " +
-        "Ask Thomson's Salesforce admin to either: (a) whitelist Vercel's IP range, " +
-        "or (b) set the Connected App's IP Relaxation policy to 'Relax IP Restrictions'. " +
-        "Alternatively, create a dedicated Connected App for this integration."
-      );
-    }
-    if (errorDesc.toLowerCase().includes("invalid_client")) {
-      throw new Error(
-        "Connected App authentication failed. " +
-        "The default Salesforce app may be blocked by this org's security settings. " +
-        "Thomson's Salesforce admin will need to create a Connected App — see the setup guide."
-      );
-    }
-
-    throw new Error(`Salesforce authentication error: ${errorDesc}`);
   }
 
-  return data as SalesforceAuthResult;
+  if (!candidates.length) return null;
+
+  // Prefer most-frequent value; tiebreak by median
+  const freq: Record<number, number> = {};
+  for (const n of candidates) freq[n] = (freq[n] || 0) + 1;
+  const sorted = candidates.sort((a, b) => freq[b] - freq[a] || a - b);
+  return sorted[0];
 }
 
-// ── SOQL QUERY WITH PAGINATION ────────────────────────────────────────────────
+// ── PAGE FETCHER ──────────────────────────────────────────────────────────────
 
-/**
- * Execute a SOQL query. Automatically follows pagination (Salesforce returns
- * max 2000 records per page, but has all records across multiple pages).
- */
-export async function querySalesforce<T>(
-  auth: SalesforceAuthResult,
-  soql: string
-): Promise<T[]> {
-  const apiVersion = "v59.0";
-  let url = `${auth.instance_url}/services/data/${apiVersion}/query?q=${encodeURIComponent(soql)}`;
+// Rotate User-Agents to avoid basic bot detection
+const USER_AGENTS = [
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+];
 
-  const headers = {
-    Authorization: `Bearer ${auth.access_token}`,
-    "Content-Type": "application/json",
-  };
+function randomUA(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
 
-  const records: T[] = [];
+// Strip HTML to clean text
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  while (url) {
-    const response = await fetch(url, {
-      headers,
-      signal: AbortSignal.timeout(30_000),
+// Try to extract the region of the page most likely to contain pricing
+function focusOnPriceRegion(html: string, selector?: string): string {
+  // 1. Try CSS selector hint (class/id matching)
+  if (selector) {
+    const selectorParts = selector.split(",").map(s => s.trim());
+    for (const sel of selectorParts) {
+      const classMatch = sel.match(/\[class\*="([^"]+)"\]|\.([a-zA-Z0-9_-]+)/);
+      const idMatch = sel.match(/#([a-zA-Z0-9_-]+)/);
+      const searchFor = classMatch?.[1] || classMatch?.[2] || idMatch?.[1];
+      if (searchFor) {
+        const idx = html.toLowerCase().indexOf(searchFor.toLowerCase());
+        if (idx !== -1) {
+          const region = html.slice(Math.max(0, idx - 200), idx + 1200);
+          const regionText = htmlToText(region);
+          if (regionText.length > 50) return regionText;
+        }
+      }
+    }
+  }
+
+  // 2. Look for pricing-related anchor words in the HTML
+  const anchors = ["price", "cost", "fee", "rate", "from $", "USD", "per person", "registration"];
+  for (const anchor of anchors) {
+    const idx = html.toLowerCase().indexOf(anchor.toLowerCase());
+    if (idx !== -1) {
+      const region = html.slice(Math.max(0, idx - 100), idx + 800);
+      const regionText = htmlToText(region);
+      if (regionText.length > 30) return regionText;
+    }
+  }
+
+  // 3. Full page text (capped to avoid token blowup)
+  return htmlToText(html).slice(0, 8000);
+}
+
+export async function scrapeCompetitorPrice(
+  product: CompetitorProduct
+): Promise<{ price: number | null; snippet: string; error?: string }> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+
+    const response = await fetch(product.competitor_url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": randomUA(),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        // Referrer helps look like organic traffic from Google
+        "Referer": "https://www.google.com/",
+      },
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
-      const errText = await response.text();
-      let parsed: { message?: string; errorCode?: string }[] = [];
-      try { parsed = JSON.parse(errText); } catch { /* use raw text */ }
-      const errMsg = parsed[0]?.message || errText;
-      const errCode = parsed[0]?.errorCode || "";
-
-      throw new Error(
-        `Salesforce query failed (${response.status}) ${errCode}: ${errMsg}`
-      );
+      return { price: null, snippet: "", error: `HTTP ${response.status}` };
     }
 
-    const data = await response.json();
-    records.push(...(data.records || []));
+    const html = await response.text();
+    const searchText = focusOnPriceRegion(html, product.scrape_selector || undefined);
+    const price = extractPrice(searchText, product.price_pattern || undefined);
+    const snippet = searchText.slice(0, 1500);
 
-    // Salesforce paginates with nextRecordsUrl (relative path)
-    url = data.done === false && data.nextRecordsUrl
-      ? `${auth.instance_url}${data.nextRecordsUrl}`
-      : "";
-  }
-
-  return records;
-}
-
-// ── FIELD DISCOVERY ───────────────────────────────────────────────────────────
-
-/**
- * Return all fields on the Opportunity object for this Salesforce org.
- * Used by the /api/salesforce/discover endpoint to verify field names.
- * Only needs to be run once during initial setup.
- */
-export async function discoverOpportunityFields(
-  auth: SalesforceAuthResult
-): Promise<Array<{ label: string; name: string; type: string }>> {
-  const apiVersion = "v59.0";
-  const url = `${auth.instance_url}/services/data/${apiVersion}/sobjects/Opportunity/describe`;
-
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${auth.access_token}` },
-    signal: AbortSignal.timeout(20_000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Field discovery failed: ${response.status} ${await response.text()}`);
-  }
-
-  const data = await response.json();
-  return (data.fields || []).map((f: { label: string; name: string; type: string }) => ({
-    label: f.label,
-    name: f.name,
-    type: f.type,
-  }));
-}
-
-// ── BOOKING QUERIES ───────────────────────────────────────────────────────────
-
-/**
- * Fetch all booked/confirmed Opportunities from Thomson's Salesforce.
- * 
- * Includes Stage = 'Booked' with Booking_Status__c of Confirmed OR Pending Confirmation.
- * "Pending Confirmation" is included because it still represents a seat being held.
- * 
- * Date range: 2 years back + 2 years forward gives full historical context
- * plus all upcoming trips.
- * 
- * If field names are wrong, Salesforce returns INVALID_FIELD — the sync route
- * catches this and directs you to run the discover endpoint instead.
- */
-export async function fetchTBTBookings(
-  auth: SalesforceAuthResult,
-  yearsBack = 2,
-  yearsForward = 2
-): Promise<SFOpportunity[]> {
-  const now = new Date();
-  const startDate = `${now.getFullYear() - yearsBack}-01-01`;
-  const endDate = `${now.getFullYear() + yearsForward}-12-31`;
-
-  // We query Opportunities (bookings) with the Tour__r relationship to get tour name.
-  // This is a single query — no joins needed, Salesforce traverses the lookup automatically.
-  const soql = `
-    SELECT
-      Id,
-      Name,
-      Booking_Date__c,
-      Departure_Date__c,
-      Pax__c,
-      Amount,
-      Booking_Status__c,
-      StageName,
-      Lead_Group_Member_Name__c,
-      Tour_Type__c,
-      Tour__c,
-      Tour__r.Name,
-      Account.Name
-    FROM Opportunity
-    WHERE StageName = 'Booked'
-      AND Departure_Date__c >= ${startDate}
-      AND Departure_Date__c <= ${endDate}
-    ORDER BY Departure_Date__c ASC
-  `.replace(/\s+/g, " ").trim();
-
-  return querySalesforce<SFOpportunity>(auth, soql);
-}
-
-// ── FIELD MAPPING HELPERS ─────────────────────────────────────────────────────
-
-/**
- * Extract the tour name from an Opportunity record.
- * Prefers the related Tour__r.Name.
- * Falls back to parsing the Opportunity Name: "2026 Trans Dolomites Jun 06 - Kameron Shahid"
- * → strips " - Kameron Shahid" suffix → "2026 Trans Dolomites Jun 06"
- */
-export function extractTourName(opp: SFOpportunity): string {
-  if (opp.Tour__r?.Name) return opp.Tour__r.Name.trim();
-
-  if (opp.Name) {
-    // Opportunity Name format: "Tour Name - Lead Guest Name"
-    // Split on " - " and drop the last segment (client name)
-    const parts = opp.Name.split(" - ");
-    if (parts.length >= 2) {
-      return parts.slice(0, -1).join(" - ").trim();
+    return { price, snippet };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    if (message.includes("abort")) return { price: null, snippet: "", error: "Timeout (20s)" };
+    if (message.includes("ENOTFOUND") || message.includes("ECONNREFUSED")) {
+      return { price: null, snippet: "", error: "Site unreachable" };
     }
-    return opp.Name.trim();
+    return { price: null, snippet: "", error: message };
+  }
+}
+
+// ── FULL SCRAPE JOB ───────────────────────────────────────────────────────────
+
+export async function runCompetitorScrapeJob(companyId?: string): Promise<{
+  scraped: number;
+  changes_found: number;
+  errors: number;
+  results: Array<{
+    name: string;
+    product: string;
+    price: number | null;
+    changed: boolean;
+    error?: string;
+    url: string;
+  }>;
+}> {
+  const supabase = createServiceClient();
+
+  let query = supabase.from("competitor_products").select("*").eq("is_active", true);
+  if (companyId) query = query.eq("company_id", companyId);
+  const { data: products, error } = await query;
+
+  if (error || !products) {
+    return { scraped: 0, changes_found: 0, errors: 1, results: [] };
   }
 
-  return "";
-}
+  let scraped = 0;
+  let changes_found = 0;
+  let errors = 0;
+  const results: Array<{
+    name: string; product: string; price: number | null; changed: boolean; error?: string; url: string;
+  }> = [];
 
-/**
- * Map Salesforce status values to our bookings.status field.
- * Our values: 'confirmed', 'waitlist', 'cancelled', 'inquiry'
- */
-export function mapSFStatus(opp: SFOpportunity): string {
-  const bookingStatus = (opp.Booking_Status__c || "").toLowerCase();
-  const stage = (opp.StageName || "").toLowerCase();
+  for (const product of products) {
+    // Small random delay to avoid hammering sites
+    await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
 
-  if (bookingStatus === "confirmed" || stage === "booked") return "confirmed";
-  if (bookingStatus.includes("pending")) return "confirmed"; // pending = holding a seat
-  if (stage.includes("cancel") || bookingStatus.includes("cancel")) return "cancelled";
-  return "confirmed";
-}
+    try {
+      const result = await scrapeCompetitorPrice(product);
 
-/**
- * Map Salesforce Tour_Type__c values to our internal trip_type values.
- * Sugati uses labels like "Cycling Road", "Cycling Gravel", "Private", etc.
- */
-export function mapTourType(sfTourType: string | null | undefined): string {
-  if (!sfTourType) return "signature";
-  const t = sfTourType.toLowerCase();
-  if (t.includes("tdf") || t.includes("tour de france")) return "tdf";
-  if (t.includes("gravel")) return "gravel";
-  if (t.includes("private")) return "private";
-  if (t.includes("training") || t.includes("camp")) return "training_camp";
-  if (t.includes("race")) return "race_trip";
-  if (t.includes("road") || t.includes("cycling")) return "signature";
-  return "signature";
+      if (result.error || result.price === null) {
+        errors++;
+        results.push({
+          name: product.competitor_name,
+          product: product.product_name || product.competitor_url,
+          price: null,
+          changed: false,
+          error: result.error || "No price found",
+          url: product.competitor_url,
+        });
+        // Still update last_scraped_at so we know we tried
+        await supabase
+          .from("competitor_products")
+          .update({ last_scraped_at: new Date().toISOString() })
+          .eq("id", product.id);
+        continue;
+      }
+
+      scraped++;
+      const newPrice = result.price;
+      const oldPrice = product.last_price_usd;
+      const changePct = oldPrice ? (newPrice - oldPrice) / oldPrice : 0;
+      const changed = !!oldPrice && Math.abs(changePct) >= 0.03; // ≥3% threshold
+
+      // Record in price history
+      await supabase.from("competitor_price_history").insert({
+        competitor_product_id: product.id,
+        price_usd: newPrice,
+        raw_text: result.snippet,
+        change_pct: changePct,
+      });
+
+      // Update product
+      await supabase
+        .from("competitor_products")
+        .update({ last_price_usd: newPrice, last_scraped_at: new Date().toISOString() })
+        .eq("id", product.id);
+
+      results.push({
+        name: product.competitor_name,
+        product: product.product_name || product.competitor_url,
+        price: newPrice,
+        changed,
+        url: product.competitor_url,
+      });
+
+      // Create AI alert recommendation on significant changes
+      if (changed) {
+        changes_found++;
+
+        const { data: comparableTrips } = await supabase
+          .from("trips")
+          .select("id, name, current_price_usd")
+          .eq("company_id", product.company_id)
+          .eq("trip_type", product.trip_type || "signature")
+          .eq("status", "open")
+          .limit(1);
+
+        const ourTrip = comparableTrips?.[0];
+
+        try {
+          const analysis = await analyzeCompetitorPriceChange({
+            our_trip_name: ourTrip?.name || "our comparable trip",
+            our_current_price: ourTrip?.current_price_usd || 0,
+            competitor_name: product.competitor_name,
+            competitor_product: product.product_name || product.competitor_url,
+            old_price: oldPrice!,
+            new_price: newPrice,
+            change_pct: changePct,
+          });
+
+          await supabase.from("ai_recommendations").insert({
+            company_id: product.company_id,
+            tool: "competitor_alert",
+            status: "pending",
+            priority: Math.abs(changePct) >= 0.10 ? "high" : "normal",
+            competitor_product_id: product.id,
+            trip_id: ourTrip?.id,
+            current_price_usd: ourTrip?.current_price_usd,
+            title: analysis.title,
+            ai_reasoning: analysis.reasoning,
+            draft_content: analysis.recommended_action,
+          });
+        } catch {
+          // Don't let AI analysis failure block the scrape
+        }
+      }
+    } catch (err) {
+      errors++;
+      results.push({
+        name: product.competitor_name,
+        product: product.product_name || product.competitor_url,
+        price: null,
+        changed: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+        url: product.competitor_url,
+      });
+    }
+  }
+
+  return { scraped, changes_found, errors, results };
 }
