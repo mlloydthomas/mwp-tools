@@ -38,8 +38,10 @@ const COMPANY_API_KEYS: Record<string, string | undefined> = {
 function derivePrivateCore(title: string): string {
   return title
     .toLowerCase()
+    // Strip "(Client Name) PRIVATE EXPEDITION" pattern at front
+    .replace(/^\(.*?\)\s*/i, "")           // strip leading "(Client Name) "
     .replace(/^private\s+/i, "")           // strip leading "PRIVATE "
-    .replace(/\s*\(.*?\)\s*/g, " ")        // strip "(Client Name)"
+    .replace(/\s*\(.*?\)\s*/g, " ")        // strip "(Client Name)" anywhere
     .replace(/\s*-\s*\d+\s*days?.*$/i, "") // strip "- 5 DAYS" suffix
     .replace(/™/g, "")                      // strip trademark symbol
     .replace(/\s+/g, " ")
