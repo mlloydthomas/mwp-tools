@@ -29,6 +29,19 @@ const COMPANY_API_KEYS: Record<string, string | undefined> = {
 };
 
 /**
+ * Flybook sometimes uses different names for the same trip across different years.
+ * Map known variants to the canonical name we use in our DB.
+ * Key: lowercase Flybook title → Value: lowercase canonical name
+ */
+const FLYBOOK_NAME_ALIASES: Record<string, string> = {
+  // Peru: older bookings use short name, 2026 bookings use full name
+  "peru climbing school expedition": "peru climbing school",
+  // Volcanoes of Mexico: some bookings use longer variant
+  "volcanoes of mexico climbing school": "volcanoes of mexico",
+  "volcanoes of mexico": "volcanoes of mexico",
+};
+
+/**
  * For private trips with client names in the title, strip "PRIVATE" prefix,
  * client name in parens, and day-count suffixes to get a matchable core name.
  * e.g. "PRIVATE EVEREST RAPID ASCENT™ EXPEDITION (Reid Tileston)" → "everest rapid ascent expedition"
@@ -189,7 +202,13 @@ export async function POST(req: NextRequest) {
 
     if (isCancelledOrRental) continue;
 
-
+    // Apply known name aliases — handles cases where Flybook uses different names
+    // for the same trip across different years
+    // e.g. "PERU CLIMBING SCHOOL EXPEDITION" → "peru climbing school"
+    const resolvedTitle = FLYBOOK_NAME_ALIASES[titleCore] 
+      ? eventTitle.replace(/.*/, FLYBOOK_NAME_ALIASES[titleCore])
+      : eventTitle;
+    const resolvedCore = resolvedTitle.toLowerCase().trim();
 
     // The Flybook event startTime is the actual departure date
     // e.g. "2026-02-07T00:00:00Z" → "2026-02-07"
@@ -198,55 +217,49 @@ export async function POST(req: NextRequest) {
 
     // For private trips, also try matching with the client name / "PRIVATE" prefix stripped
     // e.g. "PRIVATE EVEREST RAPID ASCENT™ EXPEDITION (Reid Tileston)" → "everest rapid ascent expedition"
-    const privateCore = derivePrivateCore(eventTitle);
-    const isPrivate = privateCore !== titleCore;
+    const privateCore = derivePrivateCore(resolvedTitle);
+    const isPrivate = privateCore !== resolvedCore;
 
     let tripId: string | null = null;
 
     // Strategy 1: Exact core name + exact departure date (most precise)
     if (eventDate) {
-      tripId = tripByNameAndDate.get(`${titleCore}|${eventDate}`) || null;
-      // For private trips, also try the stripped core name
+      tripId = tripByNameAndDate.get(`${resolvedCore}|${eventDate}`) || null;
       if (!tripId && isPrivate) {
         tripId = tripByNameAndDate.get(`${privateCore}|${eventDate}`) || null;
       }
     }
 
     // Strategy 2: Core name + year
+    // IMPORTANT: Only match within the same year — never attribute a 2024 booking
+    // to a 2026 trip just because the name matches. If we don't have a trip record
+    // for that year, the booking goes to unmatched.
     if (!tripId && eventYear) {
-      tripId = tripByNameAndYear.get(`${titleCore}|${eventYear}`) || null;
+      tripId = tripByNameAndYear.get(`${resolvedCore}|${eventYear}`) || null;
       if (!tripId && isPrivate) {
         tripId = tripByNameAndYear.get(`${privateCore}|${eventYear}`) || null;
       }
     }
 
-    // Strategy 3: Core name exact match (no date)
+    // Strategy 3: Strip season/date artifacts Flybook sometimes appends to titles
+    // e.g. "Ecuador Climbing School - Spring 2026" → "ecuador climbing school"
+    // Still requires year match — no year-agnostic fallback.
     if (!tripId) {
-      tripId = tripByCoreName.get(titleCore) || null;
-      if (!tripId && isPrivate) {
-        tripId = tripByCoreName.get(privateCore) || null;
-      }
-    }
-
-    // Strategy 4: Strip season/date artifacts Flybook sometimes appends to titles
-    // e.g. "Ecuador Climbing School Expedition - Spring 2026" →
-    //      "ecuador climbing school expedition"
-    // NOTE: No substring matching — too risky across similar trip names
-    if (!tripId) {
-      const fuzzyTitle = titleCore
+      const fuzzyTitle = resolvedCore
         .replace(/\s*[-–—]\s*(spring|summer|fall|autumn|winter)\s*\d{0,4}.*$/i, "")
         .replace(/\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d*\s*\d{0,4}.*$/i, "")
         .trim();
 
-      if (fuzzyTitle !== titleCore) {
-        if (eventDate) tripId = tripByNameAndDate.get(`${fuzzyTitle}|${eventDate}`) || null;
-        if (!tripId && eventYear) tripId = tripByNameAndYear.get(`${fuzzyTitle}|${eventYear}`) || null;
-        if (!tripId) tripId = tripByCoreName.get(fuzzyTitle) || null;
+      if (fuzzyTitle !== resolvedCore && eventYear) {
+        tripId = tripByNameAndYear.get(`${fuzzyTitle}|${eventYear}`) || null;
+        if (!tripId && isPrivate) {
+          tripId = tripByNameAndYear.get(`${derivePrivateCore(fuzzyTitle)}|${eventYear}`) || null;
+        }
       }
     }
 
     if (!tripId) {
-      if (!unmatched.includes(eventTitle)) unmatched.push(eventTitle);
+      if (!unmatched.includes(resolvedTitle)) unmatched.push(resolvedTitle);
       // Cannot insert without trip_id — FK constraint requires it
       continue;
     }
