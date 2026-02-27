@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for f in \"src/lib/flybook/index.ts\" \"src/lib/flybook/client.ts\" \"src/app/api/flybook/sync/route.ts\" \"src/app/api/flybook/sync-status/route.ts\" \"src/components/pricing/SyncStatus.tsx\" \"src/app/api/cron/pricing/route.ts\" \"src/app/login/page.tsx\" \"src/app/api/auth/login/route.ts\" \"middleware.ts\" \"src/lib/supabase/service.ts\")",
+      "Bash(do)",
+      "Bash(full=\"C:/Projects/mwp-tools/.claude/worktrees/zealous-khayyam/$f\")",
+      "Bash(if [ -f \"$full\" ])",
+      "Bash(then)",
+      "Bash(echo \"EXISTS:   $f\")",
+      "Bash(else)",
+      "Bash(echo \"MISSING:  $f\")",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(git add -A)"
+    ]
+  }
+}

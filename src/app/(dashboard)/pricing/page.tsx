@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import type { AiRecommendation, Trip, CompetitorProduct } from "@/types";
+import SyncStatus from "@/components/pricing/SyncStatus";
 import { format, parseISO, differenceInDays } from "date-fns";
 
 type Company = "tbt" | "aex";
@@ -237,6 +238,9 @@ export default function PricingPage() {
       {scraperResult && <StatusBanner message={scraperResult} color="blue" onDismiss={() => setScraperResult(null)} />}
       {syncResult && <StatusBanner message={syncResult} color="blue" onDismiss={() => setSyncResult(null)} />}
       {sfSyncResult && <StatusBanner message={sfSyncResult} color="blue" onDismiss={() => setSfSyncResult(null)} />}
+
+      {/* AEX Flybook Sync Status */}
+      {company === "aex" && <SyncStatus company="aex" />}
 
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-4 mb-8">
