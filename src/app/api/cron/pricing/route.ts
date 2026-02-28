@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { createServiceClient } from "@/lib/supabase/service";
+import { createServiceClient } from "@/lib/supabase/server";
 import { differenceInDays, parseISO } from "date-fns";
 
 const FLAGSHIP_KEYWORDS = ["EVEREST", "LHAKPA RI", "CHO OYU", "AMA DABLAM", "K2"];

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { createServiceClient } from "@/lib/supabase/server";
 import {
   buildMonthRanges,
   buildExternalBookingId,
@@ -131,37 +131,38 @@ async function writeSyncLog(
 
 export async function POST(req: NextRequest) {
   const start = Date.now();
+  // Support both query param (?company=aex) and JSON body ({ company: "aex" })
+  const { searchParams } = new URL(req.url);
+  const queryCompany = searchParams.get("company");
   let body: { company?: string; months_back?: number; months_forward?: number; dry_run?: boolean } = {};
-  try {
-    body = await req.json();
-  } catch { /* use defaults */ }
-  const companySlug = body.company ?? "aex";
-  const monthsBack = body.months_back ?? 1;
-  const monthsForward = body.months_forward ?? 18;
-  const dryRun = body.dry_run ?? false;
+  try { body = await req.json(); } catch { /* no body is fine */ }
+  const company = queryCompany || body.company || "aex";
+  const months_back = body.months_back ?? 1;
+  const months_forward = body.months_forward ?? 18;
+  const dry_run = body.dry_run ?? false;
   const supabase = createServiceClient();
-  const { data: company } = await supabase.from("companies").select("id").eq("slug", companySlug).single();
-  if (!company) {
-    return NextResponse.json({ status: "error", error: `Company not found: ${companySlug}` }, { status: 404 });
+  const { data: companyRow } = await supabase.from("companies").select("id").eq("slug", company).single();
+  if (!companyRow) {
+    return NextResponse.json({ status: "error", error: `Company not found: ${company}` }, { status: 404 });
   }
   const apiKey = process.env.FLYBOOK_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ status: "error", error: "FLYBOOK_API_KEY not set" }, { status: 500 });
   }
-  const tripMap = await buildTripMap(supabase, company.id);
-  const { reservations, monthsCovered } = await fetchAllMonths(apiKey, monthsBack, monthsForward);
-  const { matched, unmatched } = processReservations(reservations, tripMap, company.id);
+  const tripMap = await buildTripMap(supabase, companyRow.id);
+  const { reservations, monthsCovered } = await fetchAllMonths(apiKey, months_back, months_forward);
+  const { matched, unmatched } = processReservations(reservations, tripMap, companyRow.id);
   let inserted = 0;
-  if (!dryRun && matched.length > 0) {
+  if (!dry_run && matched.length > 0) {
     const { error } = await supabase.from("bookings").upsert(matched, { onConflict: "external_booking_id" });
     if (error) throw new Error(`Upsert: ${error.message}`);
     inserted = matched.length;
   }
   const durationMs = Date.now() - start;
   const syncStatus = unmatched.length > 0 ? "partial" : "success";
-  if (!dryRun) {
+  if (!dry_run) {
     await writeSyncLog(supabase, {
-      company_id: company.id,
+      company_id: companyRow.id,
       reservations_fetched: reservations.length,
       bookings_matched: matched.length,
       bookings_inserted: inserted,
@@ -171,7 +172,7 @@ export async function POST(req: NextRequest) {
       duration_ms: durationMs,
     });
   }
-  return NextResponse.json({
+  const result = {
     status: syncStatus,
     reservations_fetched: reservations.length,
     bookings_matched: matched.length,
@@ -179,6 +180,17 @@ export async function POST(req: NextRequest) {
     unmatched_events: unmatched,
     months_covered: monthsCovered,
     duration_ms: durationMs,
-    dry_run: dryRun,
+    dry_run: dry_run,
+  };
+  return NextResponse.json({
+    // New format (for SyncStatus component and direct API calls)
+    ...result,
+    // Legacy format (for pricing page sync button)
+    success: result.status !== "error",
+    summary: {
+      inserted: result.bookings_inserted,
+      skipped: result.reservations_fetched - result.bookings_matched,
+      unmatched_trip_titles: result.unmatched_events.map((e: { title: string }) => e.title),
+    },
   });
 }
