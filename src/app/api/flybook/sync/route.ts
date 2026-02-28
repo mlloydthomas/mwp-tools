@@ -19,7 +19,7 @@ interface BookingUpsert {
   company_id: string;
   external_booking_id: string;
   guest_count: number;
-  price_paid_usd: number;
+  price_paid_usd: number | null;
   booking_date: string;
   status: string;
   client_name: string;
@@ -75,7 +75,7 @@ function processReservations(
         company_id: companyId,
         external_booking_id: buildExternalBookingId(res.flybookResId, event.startTime),
         guest_count: parsePaxCount(event.quantityDescription),
-        price_paid_usd: res.totalCost,
+        price_paid_usd: (event.eventCost != null && event.eventCost !== 0) ? event.eventCost : null,
         booking_date: res.dateCreated,
         status: "confirmed",
         client_name: res.resName,
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
   let body: { company?: string; months_back?: number; months_forward?: number; dry_run?: boolean } = {};
   try { body = await req.json(); } catch { /* no body is fine */ }
   const company = queryCompany || body.company || "aex";
-  const months_back = body.months_back ?? 1;
+  const months_back = body.months_back ?? 24;
   const months_forward = body.months_forward ?? 18;
   const dry_run = body.dry_run ?? false;
   const supabase = createServiceClient();
