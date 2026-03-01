@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { AiRecommendation } from "@/types";
 import { format, parseISO } from "date-fns";
+
+type Company = "tbt" | "aex";
 
 const TOOL_META: Record<string, { icon: string; color: string; label: string }> = {
   pricing: { icon: "◎", color: "text-aurora-gold", label: "Pricing" },
@@ -12,18 +14,23 @@ const TOOL_META: Record<string, { icon: string; color: string; label: string }> 
 };
 
 export default function InboxPage() {
+  const [company, setCompany] = useState<Company>("aex");
   const [recs, setRecs] = useState<AiRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("all");
 
-  useEffect(() => {
-    fetch("/api/pricing/recommendations?status=pending")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.success) setRecs(d.data || []);
-      })
-      .finally(() => setLoading(false));
+  const loadRecs = useCallback(async (co: Company) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/pricing/recommendations?status=pending&company=${co}`);
+      const d = await res.json();
+      if (d.success) setRecs(d.data || []);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { loadRecs(company); }, [company, loadRecs]);
 
   const filtered = activeFilter === "all" ? recs : recs.filter((r) => r.tool === activeFilter);
   const counts = recs.reduce((acc: Record<string, number>, r) => {
@@ -44,11 +51,26 @@ export default function InboxPage() {
     <div className="animate-fade-in">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-baseline gap-3 mb-1">
-          <h1 className="section-header">Intelligence Inbox</h1>
-          {recs.length > 0 && (
-            <span className="font-mono text-aurora-green text-lg">{recs.length}</span>
-          )}
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-baseline gap-3">
+            <h1 className="section-header">Intelligence Inbox</h1>
+            {recs.length > 0 && (
+              <span className="font-mono text-aurora-green text-lg">{recs.length}</span>
+            )}
+          </div>
+          <div className="flex gap-1 bg-night-900 p-1 rounded-lg">
+            {(["tbt", "aex"] as Company[]).map(co => (
+              <button
+                key={co}
+                onClick={() => setCompany(co)}
+                className={`px-4 py-1.5 rounded-md text-sm font-mono font-medium transition-all ${
+                  company === co ? "bg-aurora-green text-night-950" : "text-night-400 hover:text-night-200"
+                }`}
+              >
+                {co.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
         <p className="text-night-400 text-sm">
           AI-generated recommendations awaiting your review.
