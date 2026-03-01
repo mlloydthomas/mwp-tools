@@ -118,7 +118,7 @@ export default function ItineraryPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Group size</label>
                   <input
@@ -139,7 +139,7 @@ export default function ItineraryPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Region</label>
                   <select
@@ -162,7 +162,7 @@ export default function ItineraryPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Start date (approx.)</label>
                   <input
@@ -250,13 +250,13 @@ function ItineraryCard({
 
   return (
     <div className="card border-night-700">
-      <div className="flex items-start justify-between gap-4 mb-3">
-        <div>
+      <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <h3 className="text-night-100 font-medium">{content.title || rec.title}</h3>
           {content.summary && <p className="text-night-400 text-sm mt-1">{content.summary}</p>}
         </div>
         {content.cost_breakdown && (
-          <div className="text-right flex-shrink-0">
+          <div className="sm:text-right flex-shrink-0">
             <div className="text-xl font-mono text-aurora-gold">
               ${content.cost_breakdown.recommended_price_per_person_usd?.toLocaleString()}
             </div>
@@ -281,7 +281,7 @@ function ItineraryCard({
             {expanded ? (
               <div className="space-y-2 mt-2">
                 {content.itinerary.map((day) => (
-                  <div key={day.day} className="flex gap-3 text-xs">
+                  <div key={day.day} className="flex flex-col gap-0.5 sm:flex-row sm:gap-3 text-xs">
                     <span className="text-night-600 font-mono w-10 flex-shrink-0">Day {day.day}</span>
                     <span className="text-night-300 flex-1">{day.title}</span>
                     <span className="text-night-500">{day.hotel}</span>
@@ -290,7 +290,7 @@ function ItineraryCard({
                 ))}
               </div>
             ) : (
-              <p className="text-night-500 text-xs">
+              <p className="text-night-500 text-xs line-clamp-2">
                 {content.itinerary.map((d) => d.title).join(" · ")}
               </p>
             )}

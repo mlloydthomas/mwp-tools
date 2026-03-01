@@ -39,7 +39,7 @@
 
 @layer components {
   .card {
-    @apply bg-night-900 border border-night-700 rounded-xl p-5;
+    @apply bg-night-900 border border-night-700 rounded-xl p-4 sm:p-5;
   }
   
   .card-hover {
@@ -90,7 +90,7 @@
   }
   
   .section-header {
-    @apply font-display text-2xl text-night-50 mb-1;
+    @apply font-display text-xl sm:text-2xl text-night-50 mb-1;
   }
   
   .price-up {
@@ -102,8 +102,9 @@
   }
   
   .nav-link {
-    @apply flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-night-400 
-           hover:text-night-100 hover:bg-night-800 transition-all duration-150;
+    @apply flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-night-400
+           hover:text-night-100 hover:bg-night-800 transition-all duration-150
+           min-h-[44px];
   }
   
   .nav-link-active {

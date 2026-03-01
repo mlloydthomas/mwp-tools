@@ -40,6 +40,7 @@ const NAV_ITEMS = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/pricing/recommendations?status=pending")
@@ -56,10 +57,15 @@ export default function Sidebar() {
       .catch(() => {});
   }, []);
 
+  // Close mobile nav on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   const totalPending = Object.values(counts).reduce((a, b) => a + b, 0);
 
-  return (
-    <aside className="w-56 min-h-screen bg-night-950 border-r border-night-800 flex flex-col sticky top-0 h-screen">
+  const navContent = (
+    <>
       {/* Logo */}
       <div className="p-5 border-b border-night-800">
         <div className="flex items-center gap-2">
@@ -70,6 +76,16 @@ export default function Sidebar() {
             <div className="font-display text-sm text-night-50 leading-none">MWP</div>
             <div className="font-mono text-xs text-night-500">Tools</div>
           </div>
+          {/* Close button — mobile only */}
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="ml-auto text-night-400 hover:text-night-200 md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Close menu"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M5 5l10 10M15 5L5 15" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -118,6 +134,64 @@ export default function Sidebar() {
           Milky Way Park · 2025
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile fixed header bar */}
+      <div className="fixed top-0 left-0 right-0 z-30 md:hidden bg-night-950 border-b border-night-800 h-14 flex items-center justify-between px-4">
+        {/* Hamburger */}
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center text-night-300 hover:text-night-100 transition-colors -ml-2"
+          aria-label="Open menu"
+        >
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 6h16M3 11h16M3 16h16" />
+          </svg>
+        </button>
+
+        {/* Wordmark */}
+        <div className="flex items-center gap-1.5">
+          <div className="w-5 h-5 rounded-full bg-aurora-green bg-opacity-20 border border-aurora-green border-opacity-40 flex items-center justify-center">
+            <span className="text-aurora-green text-[10px]">✦</span>
+          </div>
+          <span className="font-display text-sm text-night-50">MWP</span>
+          <span className="font-mono text-xs text-night-500">Tools</span>
+        </div>
+
+        {/* Pending count badge */}
+        {totalPending > 0 ? (
+          <span className="font-mono text-xs bg-aurora-green bg-opacity-20 text-aurora-green px-2 py-1 rounded-full">
+            {totalPending}
+          </span>
+        ) : (
+          <div className="w-[44px]" />
+        )}
+      </div>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 md:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Mobile slide-out drawer */}
+      <aside
+        className={`fixed top-0 left-0 h-screen w-64 bg-night-950 border-r border-night-800 flex flex-col z-50 transform transition-transform duration-200 ease-out md:hidden ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {navContent}
+      </aside>
+
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-56 min-h-screen bg-night-950 border-r border-night-800 flex-col sticky top-0 h-screen">
+        {navContent}
+      </aside>
+    </>
   );
 }

@@ -46,16 +46,16 @@ export default function EngagementPage() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="card">
           <div className="text-xl text-aurora-green mb-1">◉</div>
           <div className="text-2xl font-mono text-night-100 mb-0.5">{recs.length}</div>
           <div className="text-xs text-night-500">Outreach drafts ready</div>
         </div>
-        <div className="card col-span-2">
+        <div className="card sm:col-span-2">
           <div className="label mb-2">Strava Integration</div>
           <p className="text-night-400 text-xs">
-            Connect your clients' Strava accounts to receive real-time activity signals — 
+            Connect your clients' Strava accounts to receive real-time activity signals —
             a recent big ride or summit is a buying signal for your next outreach.
           </p>
           <a
@@ -91,9 +91,9 @@ export default function EngagementPage() {
             return (
               <div key={rec.id} className="card border-night-700">
                 {/* Client info */}
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
+                <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className={`badge badge-${rec.priority}`}>{rec.priority}</span>
                       <span className="font-mono text-xs text-night-500">score: {draft.priority_score}/100</span>
                     </div>
@@ -101,7 +101,7 @@ export default function EngagementPage() {
                       {client?.first_name} {client?.last_name}{" "}
                       <span className="text-night-500 font-normal text-sm">— {client?.email}</span>
                     </h3>
-                    <div className="flex gap-3 mt-1 text-xs text-night-500 font-mono">
+                    <div className="flex gap-3 mt-1 text-xs text-night-500 font-mono flex-wrap">
                       {client?.total_trips && <span>{client.total_trips} past trips</span>}
                       {client?.last_trip_date && (
                         <span>last trip: {format(parseISO(client.last_trip_date), "MMM yyyy")}</span>
@@ -126,7 +126,7 @@ export default function EngagementPage() {
                 )}
 
                 {/* Email draft */}
-                <div className="bg-night-950 rounded-lg p-4 mb-4">
+                <div className="bg-night-950 rounded-lg p-3 sm:p-4 mb-4">
                   <div className="label mb-2">Draft Email</div>
                   {isEditingThis ? (
                     <div className="space-y-3">
@@ -160,13 +160,13 @@ export default function EngagementPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-2 justify-end">
-                  <button onClick={() => handleAction(rec.id, "dismissed")} className="btn-danger text-xs">
+                <div className="flex gap-2 justify-end flex-wrap">
+                  <button onClick={() => handleAction(rec.id, "dismissed")} className="btn-danger text-xs min-h-[44px] sm:min-h-0">
                     Skip
                   </button>
                   {isEditingThis ? (
                     <>
-                      <button onClick={() => setEditing(null)} className="btn-secondary text-xs">
+                      <button onClick={() => setEditing(null)} className="btn-secondary text-xs min-h-[44px] sm:min-h-0">
                         Cancel
                       </button>
                       <button
@@ -174,19 +174,19 @@ export default function EngagementPage() {
                           handleAction(rec.id, "edited_approved" as "approved",
                             JSON.stringify({ subject: editSubject, body: editBody }))
                         }
-                        className="btn-primary text-xs"
+                        className="btn-primary text-xs min-h-[44px] sm:min-h-0"
                       >
                         Approve Edited
                       </button>
                     </>
                   ) : (
                     <>
-                      <button onClick={() => startEdit(rec)} className="btn-secondary text-xs">
+                      <button onClick={() => startEdit(rec)} className="btn-secondary text-xs min-h-[44px] sm:min-h-0">
                         Edit Draft
                       </button>
                       <button
                         onClick={() => handleAction(rec.id, "approved")}
-                        className="btn-primary text-xs"
+                        className="btn-primary text-xs min-h-[44px] sm:min-h-0"
                       >
                         Approve & Log
                       </button>

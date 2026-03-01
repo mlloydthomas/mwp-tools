@@ -51,14 +51,14 @@ export default function InboxPage() {
     <div className="animate-fade-in">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-1">
           <div className="flex items-baseline gap-3">
             <h1 className="section-header">Intelligence Inbox</h1>
             {recs.length > 0 && (
               <span className="font-mono text-aurora-green text-lg">{recs.length}</span>
             )}
           </div>
-          <div className="flex gap-1 bg-night-900 p-1 rounded-lg">
+          <div className="flex gap-1 bg-night-900 p-1 rounded-lg w-fit">
             {(["tbt", "aex"] as Company[]).map(co => (
               <button
                 key={co}
@@ -78,8 +78,8 @@ export default function InboxPage() {
         </p>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-2 mb-6">
+      {/* Filter tabs — horizontal scroll on mobile */}
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0">
         {["all", "pricing", "competitor_alert", "engagement", "itinerary"].map((filter) => {
           const count = filter === "all" ? recs.length : (counts[filter] || 0);
           const meta = TOOL_META[filter];
@@ -88,7 +88,7 @@ export default function InboxPage() {
             <button
               key={filter}
               onClick={() => setActiveFilter(filter)}
-              className={`text-sm px-3 py-1.5 rounded-lg border transition-all font-mono ${
+              className={`text-sm px-3 py-1.5 rounded-lg border transition-all font-mono whitespace-nowrap flex-shrink-0 ${
                 activeFilter === filter
                   ? "bg-night-800 border-night-600 text-night-100"
                   : "border-night-800 text-night-500 hover:text-night-300"
@@ -142,7 +142,7 @@ function RecommendationCard({
 
   return (
     <div className="card-hover cursor-pointer" onClick={() => setExpanded(!expanded)}>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         {/* Left */}
         <div className="flex items-start gap-3 flex-1 min-w-0">
           <span className={`text-lg mt-0.5 ${meta.color}`}>{meta.icon}</span>
@@ -164,11 +164,11 @@ function RecommendationCard({
         </div>
 
         {/* Right: actions */}
-        <div className="flex gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          <button onClick={onDismiss} className="btn-secondary text-xs py-1 px-3">
+        <div className="flex gap-2 flex-shrink-0 w-full sm:w-auto sm:ml-0" onClick={(e) => e.stopPropagation()}>
+          <button onClick={onDismiss} className="btn-secondary text-xs min-h-[44px] sm:min-h-0 sm:py-1 px-3 flex-1 sm:flex-initial">
             Dismiss
           </button>
-          <button onClick={onApprove} className="btn-primary text-xs py-1 px-3">
+          <button onClick={onApprove} className="btn-primary text-xs min-h-[44px] sm:min-h-0 sm:py-1 px-3 flex-1 sm:flex-initial">
             Approve
           </button>
         </div>
@@ -178,7 +178,7 @@ function RecommendationCard({
       {expanded && rec.draft_content && (
         <div className="mt-4 pt-4 border-t border-night-800">
           <div className="label">Draft Content</div>
-          <div className="bg-night-950 rounded-lg p-3 text-sm text-night-200 whitespace-pre-wrap font-mono text-xs">
+          <div className="bg-night-950 rounded-lg p-3 text-sm text-night-200 whitespace-pre-wrap font-mono text-xs overflow-x-auto">
             {(() => {
               try {
                 const parsed = JSON.parse(rec.draft_content || "");

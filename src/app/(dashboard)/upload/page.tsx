@@ -83,14 +83,14 @@ export default function UploadPage() {
       </div>
 
       {/* Flybook callout */}
-      <div className="mb-6 border border-aurora-blue border-opacity-30 bg-night-900 rounded-xl p-4">
+      <div className="mb-6 border border-aurora-blue border-opacity-30 bg-night-900 rounded-xl p-3 sm:p-4">
         <div className="flex gap-3">
           <span className="text-aurora-blue text-lg flex-shrink-0">◈</span>
           <div>
             <p className="text-night-200 text-sm font-medium mb-1">Flybook exports supported</p>
             <p className="text-night-500 text-xs leading-relaxed">
-              Export from Flybook via <span className="font-mono text-night-300">Reports → Reservations</span> (for bookings) 
-              or <span className="font-mono text-night-300">Reports → Customers</span> (for clients). 
+              Export from Flybook via <span className="font-mono text-night-300">Reports → Reservations</span> (for bookings)
+              or <span className="font-mono text-night-300">Reports → Customers</span> (for clients).
               CSV or Excel both work. Flybook's date format quirks are handled automatically.
             </p>
           </div>
@@ -112,7 +112,7 @@ export default function UploadPage() {
               }`}
             >
               <div className="font-medium text-sm">{UPLOAD_CONFIGS[type].label}</div>
-              <div className="text-xs text-night-500 mt-0.5">{UPLOAD_CONFIGS[type].description}</div>
+              <div className="text-xs text-night-500 mt-0.5 hidden sm:block">{UPLOAD_CONFIGS[type].description}</div>
             </button>
           ))}
         </div>
@@ -162,7 +162,7 @@ export default function UploadPage() {
         onDrop={handleDrop}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        className={`border-2 border-dashed rounded-xl p-10 text-center transition-all mb-4 ${
+        className={`border-2 border-dashed rounded-xl p-6 sm:p-10 text-center transition-all mb-4 ${
           isDragging
             ? "border-aurora-green bg-night-900"
             : file
@@ -173,7 +173,7 @@ export default function UploadPage() {
         {file ? (
           <div>
             <div className="text-aurora-green text-2xl mb-2">✓</div>
-            <p className="text-night-200 font-medium">{file.name}</p>
+            <p className="text-night-200 font-medium break-all">{file.name}</p>
             <p className="text-night-500 text-xs mt-1">{(file.size / 1024).toFixed(1)} KB</p>
             <button
               onClick={() => setFile(null)}
@@ -224,7 +224,7 @@ export default function UploadPage() {
               </p>
               <ul className="space-y-1">
                 {result.errors.map((e, i) => (
-                  <li key={i} className="text-red-300 text-xs font-mono">· {e}</li>
+                  <li key={i} className="text-red-300 text-xs font-mono break-all">· {e}</li>
                 ))}
               </ul>
             </div>

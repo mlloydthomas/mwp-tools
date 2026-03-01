@@ -74,10 +74,10 @@ export default function SyncStatus({ company }: { company: "aex" | "tbt" }) {
   const statusColor = ls ? (STATUS_COLORS[ls.status] ?? "text-night-400") : "text-night-500";
 
   return (
-    <div className="mb-6 bg-night-900 rounded-xl p-4 border border-night-800">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-night-400 text-xs font-mono uppercase tracking-widest">Flybook Sync</span>
+    <div className="mb-6 bg-night-900 rounded-xl p-3 sm:p-4 border border-night-800">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          <span className="text-night-400 text-xs font-mono uppercase tracking-widest flex-shrink-0">Flybook Sync</span>
           {loading ? (
             <span className="text-night-600 text-xs">Loading...</span>
           ) : ls ? (
@@ -89,9 +89,9 @@ export default function SyncStatus({ company }: { company: "aex" | "tbt" }) {
             <span className="text-night-600 text-xs">No sync recorded</span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-shrink-0">
           {ls && (
-            <span className="text-night-600 text-xs">
+            <span className="text-night-600 text-xs hidden sm:inline">
               {new Date(ls.run_at).toLocaleString()}
             </span>
           )}
@@ -119,7 +119,7 @@ export default function SyncStatus({ company }: { company: "aex" | "tbt" }) {
                 <div key={`${ev.flybookResId}-${ev.eventId}`} className="text-xs font-mono text-night-400 pl-3 border-l border-night-700">
                   <span className="text-night-300">{ev.eventId}</span>
                   {" — "}
-                  <span>{ev.title}</span>
+                  <span className="break-all">{ev.title}</span>
                   {" · "}
                   <span className="text-night-600">{ev.startTime?.slice(0, 10)}</span>
                 </div>
