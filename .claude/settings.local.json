@@ -12,7 +12,8 @@
       "Bash(fi)",
       "Bash(done)",
       "Bash(npx tsc --noEmit)",
-      "Bash(git add -A)"
+      "Bash(git add -A)",
+      "Bash(npm run build)"
     ]
   }
 }

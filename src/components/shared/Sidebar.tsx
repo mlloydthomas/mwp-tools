@@ -12,6 +12,12 @@ const NAV_ITEMS = [
     description: "All pending recommendations",
   },
   {
+    href: "/bookings",
+    label: "Recent Bookings",
+    icon: "◧",
+    description: "Bookings in the past 7 days",
+  },
+  {
     href: "/pricing",
     label: "Pricing",
     icon: "◎",
