@@ -14,7 +14,12 @@
       "Bash(npx tsc --noEmit)",
       "Bash(git add -A)",
       "Bash(npm run build)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(node -e \"const p = require\\(''./package.json''\\); console.log\\(''resend:'', p.dependencies.resend\\); console.log\\(''@google-analytics/data:'', p.dependencies[''@google-analytics/data'']\\)\")",
+      "Bash(node -e \"const pkg = require\\(''@google-analytics/data/package.json''\\); console.log\\(''version:'', pkg.version\\)\")",
+      "Bash(node -e \"try { const { BetaAnalyticsDataClient } = require\\(''@google-analytics/data''\\); console.log\\(''BetaAnalyticsDataClient:'', typeof BetaAnalyticsDataClient\\); } catch\\(e\\) { console.log\\(''ERROR:'', e.message\\); }\")",
+      "Bash(node -e \"const pkg = require\\(''resend/package.json''\\); console.log\\(''version:'', pkg.version\\)\")",
+      "Bash(node -e \"const { Resend } = require\\(''resend''\\); const r = new Resend\\(''test''\\); console.log\\(''emails.send:'', typeof r.emails?.send\\);\")"
     ]
   }
 }

@@ -29,6 +29,9 @@
     },
     "src/app/api/cron/engagement/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/cron/dashboard/route.ts": {
+      "maxDuration": 300
     }
   }
 }
