@@ -1,5 +1,5 @@
 import { TrafficMetrics, KeyEventMetrics } from '@/lib/analytics/client'
-import { AlpenglowBookingMetrics } from '@/lib/bookings/alpenglow'
+import { AlpenglowBookingMetrics, BookingPeriod } from '@/lib/bookings/alpenglow'
 
 export interface BrandResult {
   brand: string
@@ -13,6 +13,7 @@ export interface DashboardData {
   alpenglowBookings: AlpenglowBookingMetrics | null
   alpenglowInquiries: KeyEventMetrics | null
   thomsonPurchases: KeyEventMetrics | null
+  thomsonSpectatorPurchases: KeyEventMetrics | null
 }
 
 function formatDelta(value: number): string {
@@ -77,27 +78,7 @@ function alpenglowBookingSection(bookings: AlpenglowBookingMetrics | null): stri
       </div>
     `
   }
-  return `
-    <div style="margin-bottom:32px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
-      <h2 style="margin:0 0 16px 0;font-size:16px;font-weight:600;color:#ffffff;">Alpenglow Bookings (last 7 days)</h2>
-      <table style="width:100%;border-collapse:collapse;">
-        <thead>
-          <tr>
-            <th style="text-align:left;padding:4px 0;color:#6b7280;font-size:12px;font-weight:400;">Product</th>
-            <th style="text-align:left;padding:4px 0;color:#6b7280;font-size:12px;font-weight:400;">#</th>
-            <th style="text-align:left;padding:4px 0;color:#6b7280;font-size:12px;font-weight:400;">WoW #</th>
-            <th style="text-align:left;padding:4px 0;color:#6b7280;font-size:12px;font-weight:400;">$</th>
-            <th style="text-align:left;padding:4px 0;color:#6b7280;font-size:12px;font-weight:400;">WoW $</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${bookingRow('Expeditions 2026', bookings.expeditions2026.count, bookings.expeditions2026.revenue, bookings.expeditions2026.countDelta7d, bookings.expeditions2026.revenueDelta7d)}
-          ${bookingRow('Expeditions 2027', bookings.expeditions2027.count, bookings.expeditions2027.revenue, bookings.expeditions2027.countDelta7d, bookings.expeditions2027.revenueDelta7d)}
-          ${bookingRow('Via Ferrata', bookings.via.count, bookings.via.revenue, bookings.via.countDelta7d, bookings.via.revenueDelta7d)}
-        </tbody>
-      </table>
-    </div>
-  `
+  return ''
 }
 
 function brandSection(result: BrandResult): string {
@@ -137,84 +118,187 @@ function keyEventRow(label: string, count: number, delta7d: number, deltaYoY: nu
   `
 }
 
+// Formatting helpers
+function fmtNum(n: number): string { return n.toLocaleString('en-US') }
+function fmtRev(n: number): string { return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 }) }
+function fmtPct(v: number): string { const p = Math.round(v * 100); return (p >= 0 ? '+' : '') + p + '%' }
+function fmtBps(v: number): string { return (v >= 0 ? '+' : '') + v + ' bps' }
+
+function badge(value: number, text: string): string {
+  const bg = value > 0 ? '#166534' : value < 0 ? '#991b1b' : '#374151'
+  const fg = value > 0 ? '#dcfce7' : value < 0 ? '#fee2e2' : '#d1d5db'
+  return `<span style="background:${bg};color:${fg};padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;">${text}</span>`
+}
+
+// Cell: value on top, deltas below
+function metricCell(value: string, wow: string | null, wowVal: number | null, yoy: string | null, yoyVal: number | null): string {
+  const wowBadge = wow !== null && wowVal !== null ? badge(wowVal, wow + ' WoW') : ''
+  const yoyBadge = yoy !== null && yoyVal !== null ? badge(yoyVal, yoy + ' YoY') : ''
+  const deltas = [wowBadge, yoyBadge].filter(Boolean).join(' ')
+  return `<td style="padding:8px 6px;color:#ffffff;font-size:13px;vertical-align:top;text-align:right;">
+    <div style="font-weight:500;">${value}</div>
+    ${deltas ? `<div style="margin-top:3px;">${deltas}</div>` : ''}
+  </td>`
+}
+
+// Traffic row: label | 24h value+WoW | 7d value+WoW+YoY | 28d value+WoW+YoY
+function trafficRow(
+  label: string,
+  v24h: string, wow24h: string, wow24hVal: number,
+  v7d: string,  wow7d: string,  wow7dVal: number,  yoy7d: string,  yoy7dVal: number,
+  v28d: string, wow28d: string, wow28dVal: number, yoy28d: string, yoy28dVal: number
+): string {
+  return `<tr>
+    <td style="padding:8px 6px;color:#9ca3af;font-size:13px;vertical-align:top;">${label}</td>
+    ${metricCell(v24h, wow24h, wow24hVal, null, null)}
+    ${metricCell(v7d, wow7d, wow7dVal, yoy7d, yoy7dVal)}
+    ${metricCell(v28d, wow28d, wow28dVal, yoy28d, yoy28dVal)}
+  </tr>`
+}
+
+// Booking row: label | 24h # ($) | 7d # ($) | 28d # ($) with deltas
+function bookingRow2(
+  label: string,
+  c24h: number, r24h: number, wow24hC: number,
+  c7d: number,  r7d: number,  wow7dC: number,  yoy7dC: number,
+  c28d: number, r28d: number, wow28dC: number, yoy28dC: number
+): string {
+  const cell24h = `${fmtNum(c24h)}<br><span style="color:#6b7280;font-size:11px;">${fmtRev(r24h)}</span>`
+  const cell7d  = `${fmtNum(c7d)}<br><span style="color:#6b7280;font-size:11px;">${fmtRev(r7d)}</span>`
+  const cell28d = `${fmtNum(c28d)}<br><span style="color:#6b7280;font-size:11px;">${fmtRev(r28d)}</span>`
+  return `<tr>
+    <td style="padding:8px 6px;color:#9ca3af;font-size:13px;vertical-align:top;">${label}</td>
+    ${metricCell(cell24h, fmtPct(wow24hC), wow24hC, null, null)}
+    ${metricCell(cell7d,  fmtPct(wow7dC),  wow7dC,  fmtPct(yoy7dC),  yoy7dC)}
+    ${metricCell(cell28d, fmtPct(wow28dC), wow28dC, fmtPct(yoy28dC), yoy28dC)}
+  </tr>`
+}
+
+// Section header with colored accent bar
+function sectionHeader2(title: string, accentColor: string): string {
+  return `<div style="margin:32px 0 16px;border-top:4px solid ${accentColor};padding-top:12px;">
+    <h2 style="margin:0;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">${title}</h2>
+  </div>`
+}
+
+// Card wrapper
+function card(title: string, accentTextColor: string, content: string): string {
+  return `<div style="margin-bottom:12px;padding:16px 20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
+    <div style="font-size:11px;font-weight:600;color:${accentTextColor};text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;">${title}</div>
+    ${content}
+  </div>`
+}
+
+// Column header row for tables
+function colHeaders(): string {
+  return `<tr>
+    <th style="text-align:left;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;">Metric</th>
+    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;">24h*</th>
+    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;">7 Days</th>
+    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;">28 Days</th>
+  </tr>`
+}
+
+// Build a traffic card for a brand
+function trafficCard(
+  title: string,
+  accentColor: string,
+  traffic: TrafficMetrics | null,
+  keyEvent: KeyEventMetrics | null,
+  keyEventLabel: string | null,
+  error?: string
+): string {
+  if (!traffic) {
+    return card(title, accentColor, `<p style="color:#6b7280;font-size:13px;margin:0;">Data unavailable${error ? ': ' + error : ''}</p>`)
+  }
+  const rows = [
+    trafficRow(
+      'Users',
+      fmtNum(traffic.users24h), fmtPct(traffic.usersDelta24h), traffic.usersDelta24h,
+      fmtNum(traffic.users),    fmtPct(traffic.usersDelta7d),  traffic.usersDelta7d,  fmtPct(traffic.usersDeltaYoY),  traffic.usersDeltaYoY,
+      fmtNum(traffic.users28d), fmtPct(traffic.usersDelta28d), traffic.usersDelta28d, fmtPct(traffic.usersDeltaYoY28d), traffic.usersDeltaYoY28d
+    ),
+    trafficRow(
+      'Key Event Rate',
+      (traffic.userKeyEventRate24h * 100).toFixed(2) + '%', fmtBps(traffic.userKeyEventRateDelta24h), traffic.userKeyEventRateDelta24h,
+      (traffic.userKeyEventRate * 100).toFixed(2) + '%',    fmtBps(traffic.userKeyEventRateDelta7d),  traffic.userKeyEventRateDelta7d,  fmtBps(traffic.userKeyEventRateDeltaYoY),  traffic.userKeyEventRateDeltaYoY,
+      (traffic.userKeyEventRate28d * 100).toFixed(2) + '%', fmtBps(traffic.userKeyEventRateDelta28d), traffic.userKeyEventRateDelta28d, fmtBps(traffic.userKeyEventRateDeltaYoY28d), traffic.userKeyEventRateDeltaYoY28d
+    ),
+  ]
+  if (keyEvent && keyEventLabel) {
+    rows.push(trafficRow(
+      keyEventLabel,
+      fmtNum(keyEvent.count24h), fmtPct(keyEvent.countDelta24h), keyEvent.countDelta24h,
+      fmtNum(keyEvent.count),    fmtPct(keyEvent.countDelta7d),  keyEvent.countDelta7d,  fmtPct(keyEvent.countDeltaYoY),  keyEvent.countDeltaYoY,
+      fmtNum(keyEvent.count28d), fmtPct(keyEvent.countDelta28d), keyEvent.countDelta28d, fmtPct(keyEvent.countDeltaYoY28d), keyEvent.countDeltaYoY28d
+    ))
+  }
+  const table = `<table style="width:100%;border-collapse:collapse;">${colHeaders()}${rows.join('')}</table>`
+  return card(title, accentColor, table)
+}
+
+// Build a booking card for a BookingPeriod
+function bookingCard(title: string, accentColor: string, period: BookingPeriod | null): string {
+  if (!period) {
+    return card(title, accentColor, `<p style="color:#6b7280;font-size:13px;margin:0;">Data unavailable</p>`)
+  }
+  const table = `<table style="width:100%;border-collapse:collapse;">
+    ${colHeaders()}
+    ${bookingRow2('Bookings (#) / ($)',
+      period.count24h, period.revenue24h, period.countDelta24h,
+      period.count7d,  period.revenue7d,  period.countDelta7d,  period.countDeltaYoY7d,
+      period.count28d, period.revenue28d, period.countDelta28d, period.countDeltaYoY28d
+    )}
+  </table>`
+  return card(title, accentColor, table)
+}
+
 export function buildDashboardEmail(data: DashboardData): string {
-  const findBrand = (name: string): BrandResult => data.brands.find(b => b.brand === name) ?? { brand: name, traffic: null }
+  const findBrand = (name: string): BrandResult =>
+    data.brands.find(b => b.brand === name) ?? { brand: name, traffic: null }
   const alpenglow = findBrand('Alpenglow')
   const via = findBrand('Tahoe Via Ferrata')
   const thomson = findBrand('Thomson')
   const thomsonSpectator = findBrand('Thomson Spectator')
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-    <body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-      <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
-        <!-- Header -->
-        <div style="margin-bottom:40px;">
-          <h1 style="margin:0 0 4px 0;font-size:24px;font-weight:700;color:#ffffff;">MWP Daily</h1>
-          <p style="margin:0;font-size:14px;color:#6b7280;">${data.date}</p>
-        </div>
-        <!-- ALPENGLOW SECTION -->
-        ${sectionHeader('Alpenglow', '#faa719')}
-        <!-- Alpenglow Expeditions Traffic -->
-        <div style="margin-bottom:16px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
-          <h3 style="margin:0 0 12px 0;font-size:13px;font-weight:500;color:#faa719;text-transform:uppercase;letter-spacing:0.5px;">Alpenglow Expeditions — Traffic</h3>
-          ${alpenglow.traffic ? `
-          <table style="width:100%;border-collapse:collapse;">
-            ${metricRow('Sessions (7d)', alpenglow.traffic.sessions, alpenglow.traffic.sessionsDelta7d, alpenglow.traffic.sessionsDeltaYoY)}
-            ${metricRow('Users (7d)', alpenglow.traffic.users, alpenglow.traffic.usersDelta7d, alpenglow.traffic.usersDeltaYoY)}
-            ${metricRowBps('Key Event Rate', alpenglow.traffic.userKeyEventRate, alpenglow.traffic.userKeyEventRateDelta7d, alpenglow.traffic.userKeyEventRateDeltaYoY)}
-            ${data.alpenglowInquiries ? keyEventRow('Inquire Form Submissions', data.alpenglowInquiries.count, data.alpenglowInquiries.countDelta7d, data.alpenglowInquiries.countDeltaYoY) : ''}
-          </table>` : `<p style="color:#6b7280;font-size:14px;margin:0;">Data unavailable${alpenglow.error ? ': ' + alpenglow.error : ''}</p>`}
-        </div>
-        <!-- Via Ferrata Traffic -->
-        <div style="margin-bottom:16px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
-          <h3 style="margin:0 0 12px 0;font-size:13px;font-weight:500;color:#faa719;text-transform:uppercase;letter-spacing:0.5px;">Tahoe Via Ferrata — Traffic</h3>
-          ${via.traffic ? `
-          <table style="width:100%;border-collapse:collapse;">
-            ${metricRow('Sessions (7d)', via.traffic.sessions, via.traffic.sessionsDelta7d, via.traffic.sessionsDeltaYoY)}
-            ${metricRow('Users (7d)', via.traffic.users, via.traffic.usersDelta7d, via.traffic.usersDeltaYoY)}
-            ${metricRowBps('Key Event Rate', via.traffic.userKeyEventRate, via.traffic.userKeyEventRateDelta7d, via.traffic.userKeyEventRateDeltaYoY)}
-          </table>` : `<p style="color:#6b7280;font-size:14px;margin:0;">Data unavailable${via.error ? ': ' + via.error : ''}</p>`}
-        </div>
-        <!-- Alpenglow Bookings -->
-        ${alpenglowBookingSection(data.alpenglowBookings)}
-        <!-- THOMSON SECTION -->
-        <div style="margin-top:40px;">
-          ${sectionHeader('Thomson', '#0032ad')}
-        </div>
-        <!-- Thomson Bike Tours Traffic -->
-        <div style="margin-bottom:16px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
-          <h3 style="margin:0 0 12px 0;font-size:13px;font-weight:500;color:#6b9fd4;text-transform:uppercase;letter-spacing:0.5px;">Thomson Bike Tours — Traffic</h3>
-          ${thomson.traffic ? `
-          <table style="width:100%;border-collapse:collapse;">
-            ${metricRow('Sessions (7d)', thomson.traffic.sessions, thomson.traffic.sessionsDelta7d, thomson.traffic.sessionsDeltaYoY)}
-            ${metricRow('Users (7d)', thomson.traffic.users, thomson.traffic.usersDelta7d, thomson.traffic.usersDeltaYoY)}
-            ${metricRowBps('Key Event Rate', thomson.traffic.userKeyEventRate, thomson.traffic.userKeyEventRateDelta7d, thomson.traffic.userKeyEventRateDeltaYoY)}
-            ${data.thomsonPurchases ? keyEventRow('Purchases', data.thomsonPurchases.count, data.thomsonPurchases.countDelta7d, data.thomsonPurchases.countDeltaYoY) : ''}
-          </table>` : `<p style="color:#6b7280;font-size:14px;margin:0;">Data unavailable${thomson.error ? ': ' + thomson.error : ''}</p>`}
-        </div>
-        <!-- Thomson Spectator Traffic -->
-        <div style="margin-bottom:16px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
-          <h3 style="margin:0 0 12px 0;font-size:13px;font-weight:500;color:#6b9fd4;text-transform:uppercase;letter-spacing:0.5px;">Thomson Spectator — Traffic</h3>
-          ${thomsonSpectator.traffic ? `
-          <table style="width:100%;border-collapse:collapse;">
-            ${metricRow('Sessions (7d)', thomsonSpectator.traffic.sessions, thomsonSpectator.traffic.sessionsDelta7d, thomsonSpectator.traffic.sessionsDeltaYoY)}
-            ${metricRow('Users (7d)', thomsonSpectator.traffic.users, thomsonSpectator.traffic.usersDelta7d, thomsonSpectator.traffic.usersDeltaYoY)}
-            ${metricRowBps('Key Event Rate', thomsonSpectator.traffic.userKeyEventRate, thomsonSpectator.traffic.userKeyEventRateDelta7d, thomsonSpectator.traffic.userKeyEventRateDeltaYoY)}
-          </table>` : `<p style="color:#6b7280;font-size:14px;margin:0;">Data unavailable${thomsonSpectator.error ? ': ' + thomsonSpectator.error : ''}</p>`}
-        </div>
-        <!-- Thomson Bookings Placeholder -->
-        <div style="margin-bottom:32px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
-          <h3 style="margin:0 0 8px 0;font-size:13px;font-weight:500;color:#6b9fd4;text-transform:uppercase;letter-spacing:0.5px;">Thomson Bookings</h3>
-          <p style="color:#6b7280;font-size:14px;margin:0;">TBT bookings coming soon — Salesforce integration in progress.</p>
-        </div>
-        <!-- Footer -->
-        <div style="margin-top:32px;padding-top:16px;border-top:1px solid #1f1f1f;">
-          <p style="margin:0;font-size:12px;color:#4b5563;">Powered by MWP Tools · ${data.date}</p>
-        </div>
-      </div>
-    </body>
-    </html>
+
+  const AEX = '#faa719'
+  const TBT = '#4d7fd4'  // lighter version of #0032ad for readability on dark bg
+
+  const alpenglowSection = `
+    ${sectionHeader2('Alpenglow', AEX)}
+    ${trafficCard('Alpenglow Expeditions — Traffic', AEX, alpenglow.traffic, data.alpenglowInquiries, 'Inquire Form Submissions', alpenglow.error)}
+    ${trafficCard('Tahoe Via Ferrata — Traffic', AEX, via.traffic, null, null, via.error)}
+    ${bookingCard('Alpenglow Expedition Bookings', AEX, data.alpenglowBookings?.expeditions ?? null)}
+    ${bookingCard('Via Ferrata Bookings', AEX, data.alpenglowBookings?.via ?? null)}
+    ${bookingCard('Other Bookings', AEX, data.alpenglowBookings?.other ?? null)}
   `
+
+  const thomsonSection = `
+    ${sectionHeader2('Thomson', '#0032ad')}
+    ${trafficCard('Thomson Bike Tours — Traffic', TBT, thomson.traffic, data.thomsonPurchases, 'Purchases', thomson.error)}
+    ${trafficCard('Thomson Spectator — Traffic', TBT, thomsonSpectator.traffic, data.thomsonSpectatorPurchases, 'Purchases', thomsonSpectator.error)}
+    <div style="margin-bottom:12px;padding:16px 20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
+      <div style="font-size:11px;font-weight:600;color:${TBT};text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">Thomson Bookings</div>
+      <p style="color:#6b7280;font-size:13px;margin:0;">TBT bookings coming soon — Salesforce integration in progress.</p>
+    </div>
+  `
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
+    <div style="margin-bottom:8px;">
+      <h1 style="margin:0 0 4px 0;font-size:24px;font-weight:700;color:#ffffff;">MWP Daily</h1>
+      <p style="margin:0;font-size:13px;color:#6b7280;">${data.date}</p>
+    </div>
+    ${alpenglowSection}
+    ${thomsonSection}
+    <div style="margin-top:24px;padding-top:12px;border-top:1px solid #1f1f1f;">
+      <p style="margin:0;font-size:11px;color:#4b5563;">Powered by MWP Tools · ${data.date}</p>
+      <p style="margin:4px 0 0;font-size:11px;color:#4b5563;">* 24h data reflects the current calendar day (UTC) and may be partial.</p>
+    </div>
+  </div>
+</body>
+</html>`
 }

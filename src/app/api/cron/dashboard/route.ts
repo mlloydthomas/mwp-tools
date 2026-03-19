@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
   let alpenglowInquiries: KeyEventMetrics | null = null
   let thomsonPurchases: KeyEventMetrics | null = null
   try {
-    alpenglowInquiries = await getKeyEventCount(process.env.GA4_PROPERTY_ALPENGLOW!, 'inquire_form_submission')
+    alpenglowInquiries = await getKeyEventCount(process.env.GA4_PROPERTY_ALPENGLOW!, 'Inquire Form Submission')
   } catch (err) {
     console.error('Alpenglow inquiries error:', err)
   }
@@ -77,12 +77,18 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     console.error('Thomson purchases error:', err)
   }
+  let thomsonSpectatorPurchases: KeyEventMetrics | null = null
+  try {
+    thomsonSpectatorPurchases = await getKeyEventCount(process.env.GA4_PROPERTY_THOMSON_SPECTATOR!, 'purchase')
+  } catch (err) {
+    console.error('Thomson Spectator purchases error:', err)
+  }
 
   // Build email
   const date = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric'
   })
-  const data: DashboardData = { date, brands, alpenglowBookings, alpenglowInquiries, thomsonPurchases }
+  const data: DashboardData = { date, brands, alpenglowBookings, alpenglowInquiries, thomsonPurchases, thomsonSpectatorPurchases }
   const html = buildDashboardEmail(data)
 
   // Send via Resend
