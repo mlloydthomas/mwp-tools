@@ -13,8 +13,9 @@ export async function GET(request: NextRequest) {
   }
 
   const now = new Date()
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-  const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+  const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999))
+  const sevenDaysAgo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0, 0))
+  const fourteenDaysAgo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 13, 0, 0, 0, 0))
 
   const apiKey = process.env.FLYBOOK_API_KEY!
   const monthFetches: Promise<FlybookReservation[]>[] = []
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
       flybookResId: res.flybookResId,
       dateCreated: res.dateCreated,
       dateCreatedParsed: new Date(res.dateCreated).toISOString(),
-      inCurrentWindow: new Date(res.dateCreated) >= sevenDaysAgo && new Date(res.dateCreated) < now,
+      inCurrentWindow: new Date(res.dateCreated) >= sevenDaysAgo && new Date(res.dateCreated) <= todayEnd,
       inPriorWindow: new Date(res.dateCreated) >= fourteenDaysAgo && new Date(res.dateCreated) < sevenDaysAgo,
       rawReservationKeys: Object.keys(res),
       viaEvents: res.events
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     windowStart: sevenDaysAgo.toISOString(),
-    windowEnd: now.toISOString(),
+    windowEnd: todayEnd.toISOString(),
     totalViaReservationsFound: allVia.length,
     currentWindowCount: currentWindow.length,
     priorWindowCount: priorWindow.length,

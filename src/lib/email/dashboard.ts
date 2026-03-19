@@ -1,4 +1,4 @@
-import { TrafficMetrics } from '@/lib/analytics/client'
+import { TrafficMetrics, KeyEventMetrics } from '@/lib/analytics/client'
 import { AlpenglowBookingMetrics } from '@/lib/bookings/alpenglow'
 
 export interface BrandResult {
@@ -11,6 +11,8 @@ export interface DashboardData {
   date: string
   brands: BrandResult[]
   alpenglowBookings: AlpenglowBookingMetrics | null
+  alpenglowInquiries: KeyEventMetrics | null
+  thomsonPurchases: KeyEventMetrics | null
 }
 
 function formatDelta(value: number): string {
@@ -115,19 +117,99 @@ function brandSection(result: BrandResult): string {
   `
 }
 
+function sectionHeader(title: string, accentColor: string): string {
+  return `
+    <div style="margin-bottom:24px;margin-top:8px;">
+      <div style="height:4px;background:${accentColor};border-radius:2px;margin-bottom:12px;"></div>
+      <h2 style="margin:0;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">${title}</h2>
+    </div>
+  `
+}
+
+function keyEventRow(label: string, count: number, delta7d: number, deltaYoY: number): string {
+  return `
+    <tr>
+      <td style="padding:10px 0;color:#9ca3af;font-size:14px;">${label}</td>
+      <td style="padding:10px 0;color:#ffffff;font-size:14px;font-weight:500;">${count.toLocaleString()}</td>
+      <td style="padding:10px 0;"><span style="${badgeStyle(delta7d)}">${formatDelta(delta7d)} WoW</span></td>
+      <td style="padding:10px 0;"><span style="${badgeStyle(deltaYoY)}">${formatDelta(deltaYoY)} YoY</span></td>
+    </tr>
+  `
+}
+
 export function buildDashboardEmail(data: DashboardData): string {
+  const findBrand = (name: string): BrandResult => data.brands.find(b => b.brand === name) ?? { brand: name, traffic: null }
+  const alpenglow = findBrand('Alpenglow')
+  const via = findBrand('Tahoe Via Ferrata')
+  const thomson = findBrand('Thomson')
+  const thomsonSpectator = findBrand('Thomson Spectator')
   return `
     <!DOCTYPE html>
     <html>
     <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
     <body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
       <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
-        <div style="margin-bottom:32px;">
+        <!-- Header -->
+        <div style="margin-bottom:40px;">
           <h1 style="margin:0 0 4px 0;font-size:24px;font-weight:700;color:#ffffff;">MWP Daily</h1>
           <p style="margin:0;font-size:14px;color:#6b7280;">${data.date}</p>
         </div>
-        ${data.brands.map(brandSection).join('')}
+        <!-- ALPENGLOW SECTION -->
+        ${sectionHeader('Alpenglow', '#faa719')}
+        <!-- Alpenglow Expeditions Traffic -->
+        <div style="margin-bottom:16px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
+          <h3 style="margin:0 0 12px 0;font-size:13px;font-weight:500;color:#faa719;text-transform:uppercase;letter-spacing:0.5px;">Alpenglow Expeditions — Traffic</h3>
+          ${alpenglow.traffic ? `
+          <table style="width:100%;border-collapse:collapse;">
+            ${metricRow('Sessions (7d)', alpenglow.traffic.sessions, alpenglow.traffic.sessionsDelta7d, alpenglow.traffic.sessionsDeltaYoY)}
+            ${metricRow('Users (7d)', alpenglow.traffic.users, alpenglow.traffic.usersDelta7d, alpenglow.traffic.usersDeltaYoY)}
+            ${metricRowBps('Key Event Rate', alpenglow.traffic.userKeyEventRate, alpenglow.traffic.userKeyEventRateDelta7d, alpenglow.traffic.userKeyEventRateDeltaYoY)}
+            ${data.alpenglowInquiries ? keyEventRow('Inquire Form Submissions', data.alpenglowInquiries.count, data.alpenglowInquiries.countDelta7d, data.alpenglowInquiries.countDeltaYoY) : ''}
+          </table>` : `<p style="color:#6b7280;font-size:14px;margin:0;">Data unavailable${alpenglow.error ? ': ' + alpenglow.error : ''}</p>`}
+        </div>
+        <!-- Via Ferrata Traffic -->
+        <div style="margin-bottom:16px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
+          <h3 style="margin:0 0 12px 0;font-size:13px;font-weight:500;color:#faa719;text-transform:uppercase;letter-spacing:0.5px;">Tahoe Via Ferrata — Traffic</h3>
+          ${via.traffic ? `
+          <table style="width:100%;border-collapse:collapse;">
+            ${metricRow('Sessions (7d)', via.traffic.sessions, via.traffic.sessionsDelta7d, via.traffic.sessionsDeltaYoY)}
+            ${metricRow('Users (7d)', via.traffic.users, via.traffic.usersDelta7d, via.traffic.usersDeltaYoY)}
+            ${metricRowBps('Key Event Rate', via.traffic.userKeyEventRate, via.traffic.userKeyEventRateDelta7d, via.traffic.userKeyEventRateDeltaYoY)}
+          </table>` : `<p style="color:#6b7280;font-size:14px;margin:0;">Data unavailable${via.error ? ': ' + via.error : ''}</p>`}
+        </div>
+        <!-- Alpenglow Bookings -->
         ${alpenglowBookingSection(data.alpenglowBookings)}
+        <!-- THOMSON SECTION -->
+        <div style="margin-top:40px;">
+          ${sectionHeader('Thomson', '#0032ad')}
+        </div>
+        <!-- Thomson Bike Tours Traffic -->
+        <div style="margin-bottom:16px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
+          <h3 style="margin:0 0 12px 0;font-size:13px;font-weight:500;color:#6b9fd4;text-transform:uppercase;letter-spacing:0.5px;">Thomson Bike Tours — Traffic</h3>
+          ${thomson.traffic ? `
+          <table style="width:100%;border-collapse:collapse;">
+            ${metricRow('Sessions (7d)', thomson.traffic.sessions, thomson.traffic.sessionsDelta7d, thomson.traffic.sessionsDeltaYoY)}
+            ${metricRow('Users (7d)', thomson.traffic.users, thomson.traffic.usersDelta7d, thomson.traffic.usersDeltaYoY)}
+            ${metricRowBps('Key Event Rate', thomson.traffic.userKeyEventRate, thomson.traffic.userKeyEventRateDelta7d, thomson.traffic.userKeyEventRateDeltaYoY)}
+            ${data.thomsonPurchases ? keyEventRow('Purchases', data.thomsonPurchases.count, data.thomsonPurchases.countDelta7d, data.thomsonPurchases.countDeltaYoY) : ''}
+          </table>` : `<p style="color:#6b7280;font-size:14px;margin:0;">Data unavailable${thomson.error ? ': ' + thomson.error : ''}</p>`}
+        </div>
+        <!-- Thomson Spectator Traffic -->
+        <div style="margin-bottom:16px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
+          <h3 style="margin:0 0 12px 0;font-size:13px;font-weight:500;color:#6b9fd4;text-transform:uppercase;letter-spacing:0.5px;">Thomson Spectator — Traffic</h3>
+          ${thomsonSpectator.traffic ? `
+          <table style="width:100%;border-collapse:collapse;">
+            ${metricRow('Sessions (7d)', thomsonSpectator.traffic.sessions, thomsonSpectator.traffic.sessionsDelta7d, thomsonSpectator.traffic.sessionsDeltaYoY)}
+            ${metricRow('Users (7d)', thomsonSpectator.traffic.users, thomsonSpectator.traffic.usersDelta7d, thomsonSpectator.traffic.usersDeltaYoY)}
+            ${metricRowBps('Key Event Rate', thomsonSpectator.traffic.userKeyEventRate, thomsonSpectator.traffic.userKeyEventRateDelta7d, thomsonSpectator.traffic.userKeyEventRateDeltaYoY)}
+          </table>` : `<p style="color:#6b7280;font-size:14px;margin:0;">Data unavailable${thomsonSpectator.error ? ': ' + thomsonSpectator.error : ''}</p>`}
+        </div>
+        <!-- Thomson Bookings Placeholder -->
+        <div style="margin-bottom:32px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
+          <h3 style="margin:0 0 8px 0;font-size:13px;font-weight:500;color:#6b9fd4;text-transform:uppercase;letter-spacing:0.5px;">Thomson Bookings</h3>
+          <p style="color:#6b7280;font-size:14px;margin:0;">TBT bookings coming soon — Salesforce integration in progress.</p>
+        </div>
+        <!-- Footer -->
         <div style="margin-top:32px;padding-top:16px;border-top:1px solid #1f1f1f;">
           <p style="margin:0;font-size:12px;color:#4b5563;">Powered by MWP Tools · ${data.date}</p>
         </div>

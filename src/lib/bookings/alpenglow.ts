@@ -60,20 +60,26 @@ async function getExpeditionWindow(
 
 export async function getAlpenglowBookingMetrics(): Promise<AlpenglowBookingMetrics> {
   const now = new Date()
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-  const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
-  const nowStr = now.toISOString()
-  const sevenStr = sevenDaysAgo.toISOString()
-  const fourteenStr = fourteenDaysAgo.toISOString()
+  // Anchor all windows to midnight UTC
+  // Current window: today back 6 days (7 days inclusive of today)
+  // e.g. March 19 = March 13 00:00:00 UTC through March 19 23:59:59 UTC
+  const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999))
+  const currentStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0, 0))
+  const priorEnd = new Date(currentStart.getTime() - 1)
+  const priorStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 13, 0, 0, 0, 0))
+  const nowStr = todayEnd.toISOString()
+  const sevenStr = currentStart.toISOString()
+  const fourteenStr = priorStart.toISOString()
+  const priorEndStr = priorEnd.toISOString()
 
   const supabase = createServiceClient()
 
   // Expedition bookings — run all 4 windows in parallel
   const [exp2026Current, exp2026Prior, exp2027Current, exp2027Prior] = await Promise.all([
     getExpeditionWindow(supabase, 2026, sevenStr, nowStr),
-    getExpeditionWindow(supabase, 2026, fourteenStr, sevenStr),
+    getExpeditionWindow(supabase, 2026, fourteenStr, priorEndStr),
     getExpeditionWindow(supabase, 2027, sevenStr, nowStr),
-    getExpeditionWindow(supabase, 2027, fourteenStr, sevenStr),
+    getExpeditionWindow(supabase, 2027, fourteenStr, priorEndStr),
   ])
 
   // Via Ferrata bookings — fetch from Flybook and filter client-side.
@@ -120,10 +126,14 @@ export async function getAlpenglowBookingMetrics(): Promise<AlpenglowBookingMetr
       }, 0)
     )
 
-    if (createdAt >= sevenDaysAgo && createdAt < now) {
+    const currentWindowStart = new Date(sevenStr)
+    const currentWindowEnd = new Date(nowStr)
+    const priorWindowStart = new Date(fourteenStr)
+    const priorWindowEnd = new Date(priorEndStr)
+    if (createdAt >= currentWindowStart && createdAt <= currentWindowEnd) {
       viaCurrentCount++
       viaCurrentRevenue += revenue
-    } else if (createdAt >= fourteenDaysAgo && createdAt < sevenDaysAgo) {
+    } else if (createdAt >= priorWindowStart && createdAt <= priorWindowEnd) {
       viaPriorCount++
       viaPriorRevenue += revenue
     }

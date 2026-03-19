@@ -82,3 +82,64 @@ export async function getTrafficMetrics(propertyId: string): Promise<TrafficMetr
     userKeyEventRateDeltaYoY: Math.round((currentKeyEventRate - yoyKeyEventRate) * 10000),
   }
 }
+
+export interface KeyEventMetrics {
+  count: number
+  countDelta7d: number
+  countDeltaYoY: number
+}
+
+export async function getKeyEventCount(propertyId: string, eventName: string): Promise<KeyEventMetrics> {
+  const credentials = JSON.parse(process.env.GOOGLE_SA_CREDENTIALS!)
+  credentials.private_key = credentials.private_key.replace(/\\n/g, '\n')
+  const client = new BetaAnalyticsDataClient({ credentials })
+  const property = `properties/${propertyId}`
+
+  const today = new Date()
+  const yoyEnd = new Date(today)
+  yoyEnd.setDate(today.getDate() - 366)
+  const yoyStart = new Date(today)
+  yoyStart.setDate(today.getDate() - 372)
+
+  // Use numeric matchType value 1 = EXACT to avoid TypeScript enum issues
+  const dimensionFilter = {
+    filter: {
+      fieldName: 'eventName',
+      stringFilter: {
+        matchType: 1,
+        value: eventName,
+      },
+    },
+  }
+
+  const [currentRes, priorRes, yoyRes] = await Promise.all([
+    client.runReport({
+      property,
+      dateRanges: [{ startDate: '7daysAgo', endDate: 'yesterday' }],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter,
+    }),
+    client.runReport({
+      property,
+      dateRanges: [{ startDate: '14daysAgo', endDate: '8daysAgo' }],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter,
+    }),
+    client.runReport({
+      property,
+      dateRanges: [{ startDate: formatDate(yoyStart), endDate: formatDate(yoyEnd) }],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter,
+    }),
+  ])
+
+  const current = parseInt(currentRes[0].rows?.[0]?.metricValues?.[0]?.value ?? '0')
+  const prior = parseInt(priorRes[0].rows?.[0]?.metricValues?.[0]?.value ?? '0')
+  const yoy = parseInt(yoyRes[0].rows?.[0]?.metricValues?.[0]?.value ?? '0')
+
+  return {
+    count: current,
+    countDelta7d: delta(current, prior),
+    countDeltaYoY: delta(current, yoy),
+  }
+}

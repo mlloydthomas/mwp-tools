@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
-import { getTrafficMetrics } from '@/lib/analytics/client'
+import { getTrafficMetrics, getKeyEventCount, KeyEventMetrics } from '@/lib/analytics/client'
 import { buildDashboardEmail, BrandResult, DashboardData } from '@/lib/email/dashboard'
 import { getAlpenglowBookingMetrics, AlpenglowBookingMetrics } from '@/lib/bookings/alpenglow'
 
@@ -64,11 +64,25 @@ export async function GET(request: NextRequest) {
     console.error('Alpenglow bookings error:', err)
   }
 
+  // Brand-specific key events
+  let alpenglowInquiries: KeyEventMetrics | null = null
+  let thomsonPurchases: KeyEventMetrics | null = null
+  try {
+    alpenglowInquiries = await getKeyEventCount(process.env.GA4_PROPERTY_ALPENGLOW!, 'inquire_form_submission')
+  } catch (err) {
+    console.error('Alpenglow inquiries error:', err)
+  }
+  try {
+    thomsonPurchases = await getKeyEventCount(process.env.GA4_PROPERTY_THOMSON!, 'purchase')
+  } catch (err) {
+    console.error('Thomson purchases error:', err)
+  }
+
   // Build email
   const date = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric'
   })
-  const data: DashboardData = { date, brands, alpenglowBookings }
+  const data: DashboardData = { date, brands, alpenglowBookings, alpenglowInquiries, thomsonPurchases }
   const html = buildDashboardEmail(data)
 
   // Send via Resend
