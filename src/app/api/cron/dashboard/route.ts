@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { getTrafficMetrics } from '@/lib/analytics/client'
 import { buildDashboardEmail, BrandResult, DashboardData } from '@/lib/email/dashboard'
+import { getAlpenglowBookingMetrics, AlpenglowBookingMetrics } from '@/lib/bookings/alpenglow'
 
 export async function GET(request: NextRequest) {
   // Auth check (temporary debug — remove after diagnosing)
@@ -55,11 +56,19 @@ export async function GET(request: NextRequest) {
     error: result.status === 'rejected' ? String(result.reason) : undefined,
   }))
 
+  // Fetch Alpenglow booking metrics
+  let alpenglowBookings: AlpenglowBookingMetrics | null = null
+  try {
+    alpenglowBookings = await getAlpenglowBookingMetrics()
+  } catch (err) {
+    console.error('Alpenglow bookings error:', err)
+  }
+
   // Build email
   const date = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric'
   })
-  const data: DashboardData = { date, brands }
+  const data: DashboardData = { date, brands, alpenglowBookings }
   const html = buildDashboardEmail(data)
 
   // Send via Resend
