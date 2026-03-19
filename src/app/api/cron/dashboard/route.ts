@@ -4,10 +4,22 @@ import { getTrafficMetrics } from '@/lib/analytics/client'
 import { buildDashboardEmail, BrandResult, DashboardData } from '@/lib/email/dashboard'
 
 export async function GET(request: NextRequest) {
-  // Auth check
+  // Auth check (temporary debug — remove after diagnosing)
   const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const expectedSecret = process.env.CRON_SECRET
+  const received = authHeader ?? 'NO HEADER'
+  const expected = expectedSecret ? `Bearer ${expectedSecret}` : 'NO ENV VAR SET'
+  if (authHeader !== expected) {
+    return NextResponse.json({
+      error: 'Unauthorized',
+      debug: {
+        receivedLength: received.length,
+        expectedLength: expected.length,
+        receivedPrefix: received.substring(0, 14),
+        expectedPrefix: expected.substring(0, 14),
+        envVarSet: !!expectedSecret,
+      }
+    }, { status: 401 })
   }
 
   // Validate required env vars
