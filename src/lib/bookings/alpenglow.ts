@@ -80,13 +80,28 @@ export async function getAlpenglowBookingMetrics(): Promise<AlpenglowBookingMetr
   // Flybook API filters by departure date (startTime), NOT booking creation date.
   // We fetch a wide window and filter by dateCreated client-side.
   const apiKey = process.env.FLYBOOK_API_KEY!
-  const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000)
-  const eighteenMonthsAhead = new Date(now.getTime() + 548 * 24 * 60 * 60 * 1000)
-  const reservations = await fetchReservationsForMonth(
-    apiKey,
-    sixMonthsAgo.toISOString(),
-    eighteenMonthsAhead.toISOString()
-  )
+  // Fetch month by month across a 24-month window (6 back, 18 forward)
+  // fetchReservationsForMonth only handles single-month windows reliably
+  const monthFetches: Promise<FlybookReservation[]>[] = []
+  for (let monthOffset = -6; monthOffset <= 18; monthOffset++) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1)
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0, 23, 59, 59)
+    monthFetches.push(fetchReservationsForMonth(apiKey, monthStart.toISOString(), monthEnd.toISOString()))
+  }
+  const monthResults = await Promise.allSettled(monthFetches)
+
+  // Deduplicate by flybookResId since reservations can appear in multiple month windows
+  const reservationMap = new Map<number, FlybookReservation>()
+  for (const result of monthResults) {
+    if (result.status === 'fulfilled') {
+      for (const res of result.value) {
+        if (!reservationMap.has(res.flybookResId)) {
+          reservationMap.set(res.flybookResId, res)
+        }
+      }
+    }
+  }
+  const reservations = Array.from(reservationMap.values())
 
   let viaCurrentCount = 0
   let viaCurrentRevenue = 0
