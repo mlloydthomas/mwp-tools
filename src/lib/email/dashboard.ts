@@ -22,6 +22,21 @@ function badgeStyle(value: number): string {
   return 'background:#374151;color:#d1d5db;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500;'
 }
 
+function formatBps(bps: number): string {
+  return bps >= 0 ? `+${bps} bps` : `${bps} bps`
+}
+
+function metricRowBps(label: string, value: number, delta7d: number, deltaYoY: number): string {
+  return `
+    <tr>
+      <td style="padding:10px 0;color:#9ca3af;font-size:14px;">${label}</td>
+      <td style="padding:10px 0;color:#ffffff;font-size:14px;font-weight:500;">${(value * 100).toFixed(2)}%</td>
+      <td style="padding:10px 0;"><span style="${badgeStyle(delta7d)}">${formatBps(delta7d)} WoW</span></td>
+      <td style="padding:10px 0;"><span style="${badgeStyle(deltaYoY)}">${formatBps(deltaYoY)} YoY</span></td>
+    </tr>
+  `
+}
+
 function metricRow(label: string, value: number, delta7d: number, deltaYoY: number): string {
   return `
     <tr>
@@ -39,6 +54,7 @@ function brandSection(result: BrandResult): string {
     : `<table style="width:100%;border-collapse:collapse;">
         ${metricRow('Sessions (7d)', result.traffic.sessions, result.traffic.sessionsDelta7d, result.traffic.sessionsDeltaYoY)}
         ${metricRow('Users (7d)', result.traffic.users, result.traffic.usersDelta7d, result.traffic.usersDeltaYoY)}
+        ${metricRowBps('Key Event Rate (7d)', result.traffic.userKeyEventRate, result.traffic.userKeyEventRateDelta7d, result.traffic.userKeyEventRateDeltaYoY)}
       </table>`
 
   return `

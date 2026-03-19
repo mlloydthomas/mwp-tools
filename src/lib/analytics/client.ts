@@ -7,6 +7,9 @@ export interface TrafficMetrics {
   sessionsDeltaYoY: number
   usersDelta7d: number
   usersDeltaYoY: number
+  userKeyEventRate: number        // e.g. 0.032 = 3.2%
+  userKeyEventRateDelta7d: number  // in basis points, e.g. 20 = +20 bps
+  userKeyEventRateDeltaYoY: number // in basis points
 }
 
 function formatDate(d: Date): string {
@@ -41,28 +44,31 @@ export async function getTrafficMetrics(propertyId: string): Promise<TrafficMetr
     client.runReport({
       property,
       dateRanges: [{ startDate: '7daysAgo', endDate: 'yesterday' }],
-      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }],
+      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'userKeyEventRate' }],
     }),
     client.runReport({
       property,
       dateRanges: [{ startDate: '14daysAgo', endDate: '8daysAgo' }],
-      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }],
+      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'userKeyEventRate' }],
     }),
     client.runReport({
       property,
       dateRanges: [{ startDate: formatDate(yoyStart), endDate: formatDate(yoyEnd) }],
-      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }],
+      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'userKeyEventRate' }],
     }),
   ])
 
   // GA4 runReport returns a tuple — first element is the response
   // Rows[0].metricValues[0] = sessions, metricValues[1] = activeUsers
-  const currentSessions = parseInt(currentRes[0].rows?.[0]?.metricValues?.[0]?.value ?? '0')
-  const currentUsers    = parseInt(currentRes[0].rows?.[0]?.metricValues?.[1]?.value ?? '0')
-  const priorSessions   = parseInt(priorRes[0].rows?.[0]?.metricValues?.[0]?.value ?? '0')
-  const priorUsers      = parseInt(priorRes[0].rows?.[0]?.metricValues?.[1]?.value ?? '0')
-  const yoySessions     = parseInt(yoyRes[0].rows?.[0]?.metricValues?.[0]?.value ?? '0')
-  const yoyUsers        = parseInt(yoyRes[0].rows?.[0]?.metricValues?.[1]?.value ?? '0')
+  const currentSessions      = parseInt(currentRes[0].rows?.[0]?.metricValues?.[0]?.value ?? '0')
+  const currentUsers         = parseInt(currentRes[0].rows?.[0]?.metricValues?.[1]?.value ?? '0')
+  const currentKeyEventRate  = parseFloat(currentRes[0].rows?.[0]?.metricValues?.[2]?.value ?? '0')
+  const priorSessions        = parseInt(priorRes[0].rows?.[0]?.metricValues?.[0]?.value ?? '0')
+  const priorUsers           = parseInt(priorRes[0].rows?.[0]?.metricValues?.[1]?.value ?? '0')
+  const priorKeyEventRate    = parseFloat(priorRes[0].rows?.[0]?.metricValues?.[2]?.value ?? '0')
+  const yoySessions          = parseInt(yoyRes[0].rows?.[0]?.metricValues?.[0]?.value ?? '0')
+  const yoyUsers             = parseInt(yoyRes[0].rows?.[0]?.metricValues?.[1]?.value ?? '0')
+  const yoyKeyEventRate      = parseFloat(yoyRes[0].rows?.[0]?.metricValues?.[2]?.value ?? '0')
 
   return {
     sessions: currentSessions,
@@ -71,5 +77,8 @@ export async function getTrafficMetrics(propertyId: string): Promise<TrafficMetr
     sessionsDeltaYoY: delta(currentSessions, yoySessions),
     usersDelta7d: delta(currentUsers, priorUsers),
     usersDeltaYoY: delta(currentUsers, yoyUsers),
+    userKeyEventRate: currentKeyEventRate,
+    userKeyEventRateDelta7d: Math.round((currentKeyEventRate - priorKeyEventRate) * 10000),
+    userKeyEventRateDeltaYoY: Math.round((currentKeyEventRate - yoyKeyEventRate) * 10000),
   }
 }
