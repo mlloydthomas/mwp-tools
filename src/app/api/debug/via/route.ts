@@ -45,14 +45,12 @@ export async function GET(request: NextRequest) {
       dateCreatedParsed: new Date(res.dateCreated).toISOString(),
       inCurrentWindow: new Date(res.dateCreated) >= sevenDaysAgo && new Date(res.dateCreated) < now,
       inPriorWindow: new Date(res.dateCreated) >= fourteenDaysAgo && new Date(res.dateCreated) < sevenDaysAgo,
+      rawReservationKeys: Object.keys(res),
       viaEvents: res.events
         .filter((e: FlybookEvent) => isVia(e.title))
-        .map((e: FlybookEvent) => ({
-          title: e.title,
-          startTime: e.startTime,
-          eventCost: e.eventCost,
-        })),
+        .map((e: FlybookEvent) => ({ ...e })) as Record<string, unknown>[],
       totalCost: res.totalCost,
+      activityCost: res.activityCost,
     }))
 
   const currentWindow = allVia.filter(r => r.inCurrentWindow)
