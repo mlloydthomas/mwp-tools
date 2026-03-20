@@ -43,6 +43,34 @@ function isVia(title: string): boolean {
   return t.includes('- via') && !t.includes('bolivia')
 }
 
+// Local programs: unmatched Flybook events that are not Via, not rentals/gear,
+// and not international expeditions already tracked in Supabase
+function isLocalProgram(title: string): boolean {
+  const t = title.trim()
+  const tl = t.toLowerCase()
+  // Exclude Via Ferrata (handled separately)
+  if (tl.includes('- via')) return false
+  // Exclude rental/gear items — ski sizes start with a number
+  if (/^\d/.test(t)) return false
+  if (tl.includes('rental')) return false
+  if (tl.includes('splitboard')) return false
+  if (tl.includes('sheeva')) return false
+  if (tl.includes('helio')) return false
+  if (tl.includes('zg tour')) return false
+  if (tl.includes('safety kit')) return false
+  // Standalone beacon/shovel kits (not avalanche courses)
+  if (tl === 'beacon') return false
+  // Exclude international expeditions tracked in Supabase
+  if (tl.includes('aconcagua')) return false
+  if (tl.includes('cotopaxi')) return false
+  if (tl.includes('chimborazo')) return false
+  if (tl.includes('ecuador')) return false
+  if (tl.includes('nepal')) return false
+  if (tl.includes('volcanoes of mexico')) return false
+  if (tl.includes('bolivia')) return false
+  return true
+}
+
 function windowStats(rows: BookingRow[], start: Date, end: Date): { count: number; revenue: number } {
   const inWindow = rows.filter(b => {
     const d = new Date(b.booking_date)
@@ -129,6 +157,49 @@ function buildViaPeriod(
   }
 }
 
+interface WindowStats {
+  count: number
+  revenue: number
+}
+interface AllWindowStats {
+  cur24h: WindowStats; pri24h: WindowStats
+  cur7d: WindowStats;  pri7d: WindowStats;  yoy7d: WindowStats
+  cur28d: WindowStats; pri28d: WindowStats; yoy28d: WindowStats
+}
+function buildLocalProgramStats(
+  reservations: FlybookReservation[],
+  windows: {
+    cur24h: [Date, Date]; pri24h: [Date, Date]
+    cur7d: [Date, Date];  pri7d: [Date, Date];  yoy7d: [Date, Date]
+    cur28d: [Date, Date]; pri28d: [Date, Date]; yoy28d: [Date, Date]
+  }
+): AllWindowStats {
+  const result: AllWindowStats = {
+    cur24h: { count: 0, revenue: 0 }, pri24h: { count: 0, revenue: 0 },
+    cur7d:  { count: 0, revenue: 0 }, pri7d:  { count: 0, revenue: 0 }, yoy7d:  { count: 0, revenue: 0 },
+    cur28d: { count: 0, revenue: 0 }, pri28d: { count: 0, revenue: 0 }, yoy28d: { count: 0, revenue: 0 },
+  }
+  const wKeys = Object.keys(result) as (keyof AllWindowStats)[]
+  for (const res of reservations) {
+    const localEvents = res.events.filter((e: FlybookEvent) => isLocalProgram(e.title))
+    if (localEvents.length === 0) continue
+    const createdAt = new Date(res.dateCreated)
+    const revenue = Math.round(
+      localEvents.reduce((sum: number, e: FlybookEvent) => {
+        return sum + ((e.eventCost != null && e.eventCost !== 0) ? e.eventCost : (res.totalCost ?? 0))
+      }, 0)
+    )
+    for (const k of wKeys) {
+      const [start, end] = windows[k]
+      if (createdAt >= start && createdAt <= end) {
+        result[k].count++
+        result[k].revenue += revenue
+      }
+    }
+  }
+  return result
+}
+
 export async function getAlpenglowBookingMetrics(): Promise<AlpenglowBookingMetrics> {
   const now = new Date()
   // All windows anchored to midnight UTC
@@ -199,9 +270,41 @@ export async function getAlpenglowBookingMetrics(): Promise<AlpenglowBookingMetr
   }
   const reservations = Array.from(reservationMap.values())
 
+  // Compute ski expedition stats for each window directly from Supabase rows
+  const skiW: AllWindowStats = {
+    cur24h: windowStats(otherRows, ...windows.cur24h),
+    pri24h: windowStats(otherRows, ...windows.pri24h),
+    cur7d:  windowStats(otherRows, ...windows.cur7d),
+    pri7d:  windowStats(otherRows, ...windows.pri7d),
+    yoy7d:  windowStats(otherRows, ...windows.yoy7d),
+    cur28d: windowStats(otherRows, ...windows.cur28d),
+    pri28d: windowStats(otherRows, ...windows.pri28d),
+    yoy28d: windowStats(otherRows, ...windows.yoy28d),
+  }
+  // Compute local program stats from Flybook
+  const localW = buildLocalProgramStats(reservations, windows)
+  // Combine ski + local for each window by adding counts and revenues directly
+  const comb = (k: keyof AllWindowStats): WindowStats => ({
+    count: skiW[k].count + localW[k].count,
+    revenue: skiW[k].revenue + localW[k].revenue,
+  })
+  const oc24h = comb('cur24h'); const op24h = comb('pri24h')
+  const oc7d  = comb('cur7d');  const op7d  = comb('pri7d');  const oy7d  = comb('yoy7d')
+  const oc28d = comb('cur28d'); const op28d = comb('pri28d'); const oy28d = comb('yoy28d')
+  const other: BookingPeriod = {
+    count24h: oc24h.count,   revenue24h: oc24h.revenue,
+    count7d:  oc7d.count,    revenue7d:  oc7d.revenue,
+    count28d: oc28d.count,   revenue28d: oc28d.revenue,
+    countDelta24h:    delta(oc24h.count, op24h.count),  revenueDelta24h:    delta(oc24h.revenue, op24h.revenue),
+    countDelta7d:     delta(oc7d.count,  op7d.count),   revenueDelta7d:     delta(oc7d.revenue,  op7d.revenue),
+    countDelta28d:    delta(oc28d.count, op28d.count),  revenueDelta28d:    delta(oc28d.revenue, op28d.revenue),
+    countDeltaYoY7d:  delta(oc7d.count,  oy7d.count),  revenueDeltaYoY7d:  delta(oc7d.revenue,  oy7d.revenue),
+    countDeltaYoY28d: delta(oc28d.count, oy28d.count), revenueDeltaYoY28d: delta(oc28d.revenue, oy28d.revenue),
+  }
+
   return {
     expeditions: buildPeriod(expeditionRows, windows),
     via: buildViaPeriod(reservations, windows),
-    other: buildPeriod(otherRows, windows),
+    other,
   }
 }

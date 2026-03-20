@@ -127,17 +127,17 @@ function fmtBps(v: number): string { return (v >= 0 ? '+' : '') + v + ' bps' }
 function badge(value: number, text: string): string {
   const bg = value > 0 ? '#166534' : value < 0 ? '#991b1b' : '#374151'
   const fg = value > 0 ? '#dcfce7' : value < 0 ? '#fee2e2' : '#d1d5db'
-  return `<span style="background:${bg};color:${fg};padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;">${text}</span>`
+  return `<div style="margin-top:3px;"><span style="display:inline-block;background:${bg};color:${fg};padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;">${text}</span></div>`
 }
 
 // Cell: value on top, deltas below
-function metricCell(value: string, wow: string | null, wowVal: number | null, yoy: string | null, yoyVal: number | null): string {
-  const wowBadge = wow !== null && wowVal !== null ? badge(wowVal, wow + ' WoW') : ''
-  const yoyBadge = yoy !== null && yoyVal !== null ? badge(yoyVal, yoy + ' YoY') : ''
-  const deltas = [wowBadge, yoyBadge].filter(Boolean).join(' ')
-  return `<td style="padding:8px 6px;color:#ffffff;font-size:13px;vertical-align:top;text-align:right;">
+function metricCell(value: string, wow: string | null, wowVal: number | null, yoy: string | null, yoyVal: number | null, is24h = false): string {
+  const wowLabel = is24h ? 'vs. Prior Day' : 'WoW'
+  const wowBadge = wow !== null && wowVal !== null ? badge(wowVal, `${wow} ${wowLabel}`) : ''
+  const yoyBadge = yoy !== null && yoyVal !== null ? badge(yoyVal, `${yoy} YoY`) : ''
+  return `<td style="padding:8px 6px;color:#ffffff;font-size:13px;vertical-align:top;text-align:right;width:22%;">
     <div style="font-weight:500;">${value}</div>
-    ${deltas ? `<div style="margin-top:3px;">${deltas}</div>` : ''}
+    ${wowBadge}${yoyBadge}
   </td>`
 }
 
@@ -149,10 +149,10 @@ function trafficRow(
   v28d: string, wow28d: string, wow28dVal: number, yoy28d: string, yoy28dVal: number
 ): string {
   return `<tr>
-    <td style="padding:8px 6px;color:#9ca3af;font-size:13px;vertical-align:top;">${label}</td>
-    ${metricCell(v24h, wow24h, wow24hVal, null, null)}
-    ${metricCell(v7d, wow7d, wow7dVal, yoy7d, yoy7dVal)}
-    ${metricCell(v28d, wow28d, wow28dVal, yoy28d, yoy28dVal)}
+    <td style="padding:8px 6px;color:#9ca3af;font-size:13px;vertical-align:top;width:34%;">${label}</td>
+    ${metricCell(v24h, wow24h, wow24hVal, null, null, true)}
+    ${metricCell(v7d, wow7d, wow7dVal, yoy7d, yoy7dVal, false)}
+    ${metricCell(v28d, wow28d, wow28dVal, yoy28d, yoy28dVal, false)}
   </tr>`
 }
 
@@ -167,10 +167,10 @@ function bookingRow2(
   const cell7d  = `${fmtNum(c7d)}<br><span style="color:#6b7280;font-size:11px;">${fmtRev(r7d)}</span>`
   const cell28d = `${fmtNum(c28d)}<br><span style="color:#6b7280;font-size:11px;">${fmtRev(r28d)}</span>`
   return `<tr>
-    <td style="padding:8px 6px;color:#9ca3af;font-size:13px;vertical-align:top;">${label}</td>
-    ${metricCell(cell24h, fmtPct(wow24hC), wow24hC, null, null)}
-    ${metricCell(cell7d,  fmtPct(wow7dC),  wow7dC,  fmtPct(yoy7dC),  yoy7dC)}
-    ${metricCell(cell28d, fmtPct(wow28dC), wow28dC, fmtPct(yoy28dC), yoy28dC)}
+    <td style="padding:8px 6px;color:#9ca3af;font-size:13px;vertical-align:top;width:34%;">${label}</td>
+    ${metricCell(cell24h, fmtPct(wow24hC), wow24hC, null, null, true)}
+    ${metricCell(cell7d,  fmtPct(wow7dC),  wow7dC,  fmtPct(yoy7dC),  yoy7dC, false)}
+    ${metricCell(cell28d, fmtPct(wow28dC), wow28dC, fmtPct(yoy28dC), yoy28dC, false)}
   </tr>`
 }
 
@@ -192,10 +192,10 @@ function card(title: string, accentTextColor: string, content: string): string {
 // Column header row for tables
 function colHeaders(): string {
   return `<tr>
-    <th style="text-align:left;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;">Metric</th>
-    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;">24h*</th>
-    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;">7 Days</th>
-    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;">28 Days</th>
+    <th style="text-align:left;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;width:34%;">Metric</th>
+    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;width:22%;">24h*</th>
+    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;width:22%;">7 Days</th>
+    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;width:22%;">28 Days</th>
   </tr>`
 }
 
