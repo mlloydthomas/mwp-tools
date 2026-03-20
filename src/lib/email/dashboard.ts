@@ -253,6 +253,68 @@ function bookingCard(title: string, accentColor: string, period: BookingPeriod |
   return card(title, accentColor, table)
 }
 
+export function buildAlpenglowEmail(data: DashboardData): string {
+  const findBrand = (name: string): BrandResult =>
+    data.brands.find(b => b.brand === name) ?? { brand: name, traffic: null }
+  const alpenglow = findBrand('Alpenglow')
+  const via = findBrand('Tahoe Via Ferrata')
+  const AEX = '#faa719'
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
+    <div style="margin-bottom:8px;">
+      <h1 style="margin:0 0 4px 0;font-size:24px;font-weight:700;color:#ffffff;">Alpenglow Daily</h1>
+      <p style="margin:0;font-size:13px;color:#6b7280;">${data.date}</p>
+    </div>
+    ${sectionHeader2('Alpenglow', AEX)}
+    ${trafficCard('Alpenglow Expeditions — Traffic', AEX, alpenglow.traffic, data.alpenglowInquiries, 'Inquire Form Submissions', alpenglow.error)}
+    ${trafficCard('Tahoe Via Ferrata — Traffic', AEX, via.traffic, null, null, via.error)}
+    ${bookingCard('Alpenglow Expedition Bookings', AEX, data.alpenglowBookings?.expeditions ?? null)}
+    ${bookingCard('Via Ferrata Bookings', AEX, data.alpenglowBookings?.via ?? null)}
+    ${bookingCard('Other Bookings', AEX, data.alpenglowBookings?.other ?? null)}
+    <div style="margin-top:24px;padding-top:12px;border-top:1px solid #1f1f1f;">
+      <p style="margin:0;font-size:11px;color:#4b5563;">Powered by MWP Tools · ${data.date}</p>
+      <p style="margin:4px 0 0;font-size:11px;color:#4b5563;">* 24h data reflects the current calendar day (UTC) and may be partial.</p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+export function buildThomsonEmail(data: DashboardData): string {
+  const findBrand = (name: string): BrandResult =>
+    data.brands.find(b => b.brand === name) ?? { brand: name, traffic: null }
+  const thomson = findBrand('Thomson')
+  const thomsonSpectator = findBrand('Thomson Spectator')
+  const TBT_ACCENT = '#0032ad'
+  const TBT = '#4d7fd4'
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
+    <div style="margin-bottom:8px;">
+      <h1 style="margin:0 0 4px 0;font-size:24px;font-weight:700;color:#ffffff;">Thomson Daily</h1>
+      <p style="margin:0;font-size:13px;color:#6b7280;">${data.date}</p>
+    </div>
+    ${sectionHeader2('Thomson', TBT_ACCENT)}
+    ${trafficCard('Thomson Bike Tours — Traffic', TBT, thomson.traffic, data.thomsonPurchases ?? null, 'Purchases', thomson.error)}
+    ${trafficCard('Thomson Spectator — Traffic', TBT, thomsonSpectator.traffic, data.thomsonSpectatorPurchases ?? null, 'Purchases', thomsonSpectator.error)}
+    <div style="margin-bottom:12px;padding:16px 20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
+      <div style="font-size:11px;font-weight:600;color:${TBT};text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">Thomson Bookings</div>
+      <p style="color:#6b7280;font-size:13px;margin:0;">TBT bookings coming soon — Salesforce integration in progress.</p>
+    </div>
+    <div style="margin-top:24px;padding-top:12px;border-top:1px solid #1f1f1f;">
+      <p style="margin:0;font-size:11px;color:#4b5563;">Powered by MWP Tools · ${data.date}</p>
+      <p style="margin:4px 0 0;font-size:11px;color:#4b5563;">* 24h data reflects the current calendar day (UTC) and may be partial.</p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 export function buildDashboardEmail(data: DashboardData): string {
   const findBrand = (name: string): BrandResult =>
     data.brands.find(b => b.brand === name) ?? { brand: name, traffic: null }
