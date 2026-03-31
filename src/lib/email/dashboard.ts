@@ -86,7 +86,7 @@ function brandSection(result: BrandResult): string {
     ? `<p style="color:#6b7280;font-size:14px;margin:8px 0;">Data unavailable${result.error ? `: ${result.error}` : ''}</p>`
     : `<table style="width:100%;border-collapse:collapse;">
         ${metricRow('Sessions (7d)', result.traffic.sessions, result.traffic.sessionsDelta7d, result.traffic.sessionsDeltaYoY)}
-        ${metricRow('Users (7d)', result.traffic.users, result.traffic.usersDelta7d, result.traffic.usersDeltaYoY)}
+        ${metricRow('Total Users (7d)', result.traffic.totalUsers, result.traffic.totalUsersDelta7d, result.traffic.totalUsersDeltaYoY)}
         ${metricRowBps('Key Event Rate (7d)', result.traffic.userKeyEventRate, result.traffic.userKeyEventRateDelta7d, result.traffic.userKeyEventRateDeltaYoY)}
       </table>`
 
@@ -193,7 +193,7 @@ function card(title: string, accentTextColor: string, content: string): string {
 function colHeaders(): string {
   return `<tr>
     <th style="text-align:left;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;width:34%;">Metric</th>
-    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;width:22%;">24h*</th>
+    <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;width:22%;">Yesterday</th>
     <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;width:22%;">7 Days</th>
     <th style="text-align:right;padding:4px 6px;color:#4b5563;font-size:11px;font-weight:400;width:22%;">28 Days</th>
   </tr>`
@@ -211,28 +211,47 @@ function trafficCard(
   if (!traffic) {
     return card(title, accentColor, `<p style="color:#6b7280;font-size:13px;margin:0;">Data unavailable${error ? ': ' + error : ''}</p>`)
   }
+
   const rows = [
+    // Total Users
     trafficRow(
-      'Users',
-      fmtNum(traffic.users24h), fmtPct(traffic.usersDelta24h), traffic.usersDelta24h,
-      fmtNum(traffic.users),    fmtPct(traffic.usersDelta7d),  traffic.usersDelta7d,  fmtPct(traffic.usersDeltaYoY),  traffic.usersDeltaYoY,
-      fmtNum(traffic.users28d), fmtPct(traffic.usersDelta28d), traffic.usersDelta28d, fmtPct(traffic.usersDeltaYoY28d), traffic.usersDeltaYoY28d
+      'Total Users',
+      fmtNum(traffic.totalUsersYday), fmtPct(traffic.totalUsersDeltaYday), traffic.totalUsersDeltaYday,
+      fmtNum(traffic.totalUsers),     fmtPct(traffic.totalUsersDelta7d),   traffic.totalUsersDelta7d,   fmtPct(traffic.totalUsersDeltaYoY),   traffic.totalUsersDeltaYoY,
+      fmtNum(traffic.totalUsers28d),  fmtPct(traffic.totalUsersDelta28d),  traffic.totalUsersDelta28d,  fmtPct(traffic.totalUsersDeltaYoY28d), traffic.totalUsersDeltaYoY28d
     ),
+    // Active Users
+    trafficRow(
+      'Active Users',
+      fmtNum(traffic.activeUsersYday), fmtPct(traffic.activeUsersDeltaYday), traffic.activeUsersDeltaYday,
+      fmtNum(traffic.activeUsers),     fmtPct(traffic.activeUsersDelta7d),   traffic.activeUsersDelta7d,   fmtPct(traffic.activeUsersDeltaYoY),   traffic.activeUsersDeltaYoY,
+      fmtNum(traffic.activeUsers28d),  fmtPct(traffic.activeUsersDelta28d),  traffic.activeUsersDelta28d,  fmtPct(traffic.activeUsersDeltaYoY28d), traffic.activeUsersDeltaYoY28d
+    ),
+    // Active Rate %
+    trafficRow(
+      'Active Rate',
+      (traffic.activeUserRateYday * 100).toFixed(1) + '%', fmtBps(traffic.activeUserRateDeltaYday), traffic.activeUserRateDeltaYday,
+      (traffic.activeUserRate * 100).toFixed(1) + '%',     fmtBps(traffic.activeUserRateDelta7d),   traffic.activeUserRateDelta7d,   fmtBps(traffic.activeUserRateDeltaYoY),   traffic.activeUserRateDeltaYoY,
+      (traffic.activeUserRate28d * 100).toFixed(1) + '%',  fmtBps(traffic.activeUserRateDelta28d),  traffic.activeUserRateDelta28d,  fmtBps(traffic.activeUserRateDeltaYoY28d), traffic.activeUserRateDeltaYoY28d
+    ),
+    // Key Event Rate
     trafficRow(
       'Key Event Rate',
-      (traffic.userKeyEventRate24h * 100).toFixed(2) + '%', fmtBps(traffic.userKeyEventRateDelta24h), traffic.userKeyEventRateDelta24h,
-      (traffic.userKeyEventRate * 100).toFixed(2) + '%',    fmtBps(traffic.userKeyEventRateDelta7d),  traffic.userKeyEventRateDelta7d,  fmtBps(traffic.userKeyEventRateDeltaYoY),  traffic.userKeyEventRateDeltaYoY,
-      (traffic.userKeyEventRate28d * 100).toFixed(2) + '%', fmtBps(traffic.userKeyEventRateDelta28d), traffic.userKeyEventRateDelta28d, fmtBps(traffic.userKeyEventRateDeltaYoY28d), traffic.userKeyEventRateDeltaYoY28d
+      (traffic.userKeyEventRateYday * 100).toFixed(2) + '%', fmtBps(traffic.userKeyEventRateDeltaYday), traffic.userKeyEventRateDeltaYday,
+      (traffic.userKeyEventRate * 100).toFixed(2) + '%',     fmtBps(traffic.userKeyEventRateDelta7d),   traffic.userKeyEventRateDelta7d,   fmtBps(traffic.userKeyEventRateDeltaYoY),   traffic.userKeyEventRateDeltaYoY,
+      (traffic.userKeyEventRate28d * 100).toFixed(2) + '%',  fmtBps(traffic.userKeyEventRateDelta28d),  traffic.userKeyEventRateDelta28d,  fmtBps(traffic.userKeyEventRateDeltaYoY28d), traffic.userKeyEventRateDeltaYoY28d
     ),
   ]
+
   if (keyEvent && keyEventLabel) {
     rows.push(trafficRow(
       keyEventLabel,
-      fmtNum(keyEvent.count24h), fmtPct(keyEvent.countDelta24h), keyEvent.countDelta24h,
-      fmtNum(keyEvent.count),    fmtPct(keyEvent.countDelta7d),  keyEvent.countDelta7d,  fmtPct(keyEvent.countDeltaYoY),  keyEvent.countDeltaYoY,
-      fmtNum(keyEvent.count28d), fmtPct(keyEvent.countDelta28d), keyEvent.countDelta28d, fmtPct(keyEvent.countDeltaYoY28d), keyEvent.countDeltaYoY28d
+      fmtNum(keyEvent.countYday), fmtPct(keyEvent.countDeltaYday), keyEvent.countDeltaYday,
+      fmtNum(keyEvent.count),     fmtPct(keyEvent.countDelta7d),   keyEvent.countDelta7d,   fmtPct(keyEvent.countDeltaYoY),   keyEvent.countDeltaYoY,
+      fmtNum(keyEvent.count28d),  fmtPct(keyEvent.countDelta28d),  keyEvent.countDelta28d,  fmtPct(keyEvent.countDeltaYoY28d), keyEvent.countDeltaYoY28d
     ))
   }
+
   const table = `<table style="width:100%;border-collapse:collapse;">${colHeaders()}${rows.join('')}</table>`
   return card(title, accentColor, table)
 }
@@ -276,7 +295,6 @@ export function buildAlpenglowEmail(data: DashboardData): string {
     ${bookingCard('Other Bookings', AEX, data.alpenglowBookings?.other ?? null)}
     <div style="margin-top:24px;padding-top:12px;border-top:1px solid #1f1f1f;">
       <p style="margin:0;font-size:11px;color:#4b5563;">Powered by MWP Tools · ${data.date}</p>
-      <p style="margin:4px 0 0;font-size:11px;color:#4b5563;">* 24h data reflects the current calendar day (UTC) and may be partial.</p>
     </div>
   </div>
 </body>
@@ -308,7 +326,6 @@ export function buildThomsonEmail(data: DashboardData): string {
     </div>
     <div style="margin-top:24px;padding-top:12px;border-top:1px solid #1f1f1f;">
       <p style="margin:0;font-size:11px;color:#4b5563;">Powered by MWP Tools · ${data.date}</p>
-      <p style="margin:4px 0 0;font-size:11px;color:#4b5563;">* 24h data reflects the current calendar day (UTC) and may be partial.</p>
     </div>
   </div>
 </body>
@@ -358,7 +375,6 @@ export function buildDashboardEmail(data: DashboardData): string {
     ${thomsonSection}
     <div style="margin-top:24px;padding-top:12px;border-top:1px solid #1f1f1f;">
       <p style="margin:0;font-size:11px;color:#4b5563;">Powered by MWP Tools · ${data.date}</p>
-      <p style="margin:4px 0 0;font-size:11px;color:#4b5563;">* 24h data reflects the current calendar day (UTC) and may be partial.</p>
     </div>
   </div>
 </body>
