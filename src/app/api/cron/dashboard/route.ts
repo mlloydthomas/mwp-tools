@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { getTrafficMetrics, getKeyEventCount, KeyEventMetrics } from '@/lib/analytics/client'
 import { buildDashboardEmail, BrandResult, DashboardData } from '@/lib/email/dashboard'
 import { getAlpenglowBookingMetrics, AlpenglowBookingMetrics } from '@/lib/bookings/alpenglow'
+import { getLatestSyncStatus } from '@/lib/flybook/sync'
 
 export async function GET(request: NextRequest) {
   // Auth check (temporary debug — remove after diagnosing)
@@ -84,11 +85,14 @@ export async function GET(request: NextRequest) {
     console.error('Thomson Spectator purchases error:', err)
   }
 
+  // Fetch latest Flybook sync status (for banner)
+  const syncStatus = await getLatestSyncStatus('aex')
+
   // Build email
   const date = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric'
   })
-  const data: DashboardData = { date, brands, alpenglowBookings, alpenglowInquiries, thomsonPurchases, thomsonSpectatorPurchases }
+  const data: DashboardData = { date, brands, alpenglowBookings, alpenglowInquiries, thomsonPurchases, thomsonSpectatorPurchases, syncStatus }
   const html = buildDashboardEmail(data)
 
   // Send via Resend

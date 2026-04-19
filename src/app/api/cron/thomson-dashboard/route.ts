@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { getTrafficMetrics, getKeyEventCount, KeyEventMetrics } from '@/lib/analytics/client'
 import { buildThomsonEmail, BrandResult, DashboardData } from '@/lib/email/dashboard'
+import { getLatestSyncStatus } from '@/lib/flybook/sync'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -48,6 +49,8 @@ export async function GET(request: NextRequest) {
     console.error('Thomson Spectator purchases error:', err)
   }
 
+  const syncStatus = await getLatestSyncStatus('aex')
+
   const date = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric'
   })
@@ -59,6 +62,7 @@ export async function GET(request: NextRequest) {
     alpenglowInquiries: null,
     thomsonPurchases,
     thomsonSpectatorPurchases,
+    syncStatus,
   }
   const html = buildThomsonEmail(data)
 

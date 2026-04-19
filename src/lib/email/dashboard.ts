@@ -7,6 +7,16 @@ export interface BrandResult {
   error?: string
 }
 
+export interface SyncStatus {
+  runAt: string | null
+  status: string | null
+  reservationsFetched: number | null
+  bookingsMatched: number | null
+  bookingsInserted: number | null
+  unmatchedCount: number | null
+  error?: string
+}
+
 export interface DashboardData {
   date: string
   brands: BrandResult[]
@@ -14,108 +24,7 @@ export interface DashboardData {
   alpenglowInquiries: KeyEventMetrics | null
   thomsonPurchases: KeyEventMetrics | null
   thomsonSpectatorPurchases: KeyEventMetrics | null
-}
-
-function formatDelta(value: number): string {
-  const pct = Math.round(value * 100)
-  return pct >= 0 ? `+${pct}%` : `${pct}%`
-}
-
-function badgeStyle(value: number): string {
-  if (value > 0) return 'background:#166534;color:#dcfce7;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500;'
-  if (value < 0) return 'background:#991b1b;color:#fee2e2;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500;'
-  return 'background:#374151;color:#d1d5db;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500;'
-}
-
-function formatBps(bps: number): string {
-  return bps >= 0 ? `+${bps} bps` : `${bps} bps`
-}
-
-function metricRowBps(label: string, value: number, delta7d: number, deltaYoY: number): string {
-  return `
-    <tr>
-      <td style="padding:10px 0;color:#9ca3af;font-size:14px;">${label}</td>
-      <td style="padding:10px 0;color:#ffffff;font-size:14px;font-weight:500;">${(value * 100).toFixed(2)}%</td>
-      <td style="padding:10px 0;"><span style="${badgeStyle(delta7d)}">${formatBps(delta7d)} WoW</span></td>
-      <td style="padding:10px 0;"><span style="${badgeStyle(deltaYoY)}">${formatBps(deltaYoY)} YoY</span></td>
-    </tr>
-  `
-}
-
-function metricRow(label: string, value: number, delta7d: number, deltaYoY: number): string {
-  return `
-    <tr>
-      <td style="padding:10px 0;color:#9ca3af;font-size:14px;">${label}</td>
-      <td style="padding:10px 0;color:#ffffff;font-size:14px;font-weight:500;">${value.toLocaleString()}</td>
-      <td style="padding:10px 0;"><span style="${badgeStyle(delta7d)}">${formatDelta(delta7d)} WoW</span></td>
-      <td style="padding:10px 0;"><span style="${badgeStyle(deltaYoY)}">${formatDelta(deltaYoY)} YoY</span></td>
-    </tr>
-  `
-}
-
-function formatRevenue(n: number): string {
-  return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 })
-}
-
-function bookingRow(label: string, count: number, revenue: number, countDelta: number, revenueDelta: number): string {
-  return `
-    <tr>
-      <td style="padding:8px 0;color:#9ca3af;font-size:14px;">${label}</td>
-      <td style="padding:8px 0;color:#ffffff;font-size:14px;">${count}</td>
-      <td style="padding:8px 0;"><span style="${badgeStyle(countDelta)}">${formatDelta(countDelta)}</span></td>
-      <td style="padding:8px 0;color:#ffffff;font-size:14px;">${formatRevenue(revenue)}</td>
-      <td style="padding:8px 0;"><span style="${badgeStyle(revenueDelta)}">${formatDelta(revenueDelta)}</span></td>
-    </tr>
-  `
-}
-
-function alpenglowBookingSection(bookings: AlpenglowBookingMetrics | null): string {
-  if (!bookings) {
-    return `
-      <div style="margin-bottom:32px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
-        <h2 style="margin:0 0 8px 0;font-size:16px;font-weight:600;color:#ffffff;">Alpenglow Bookings</h2>
-        <p style="color:#6b7280;font-size:14px;margin:0;">Booking data unavailable</p>
-      </div>
-    `
-  }
-  return ''
-}
-
-function brandSection(result: BrandResult): string {
-  const content = result.traffic === null
-    ? `<p style="color:#6b7280;font-size:14px;margin:8px 0;">Data unavailable${result.error ? `: ${result.error}` : ''}</p>`
-    : `<table style="width:100%;border-collapse:collapse;">
-        ${metricRow('Sessions (7d)', result.traffic.sessions, result.traffic.sessionsDelta7d, result.traffic.sessionsDeltaYoY)}
-        ${metricRow('Total Users (7d)', result.traffic.totalUsers, result.traffic.totalUsersDelta7d, result.traffic.totalUsersDeltaYoY)}
-        ${metricRowBps('Key Event Rate (7d)', result.traffic.userKeyEventRate, result.traffic.userKeyEventRateDelta7d, result.traffic.userKeyEventRateDeltaYoY)}
-      </table>`
-
-  return `
-    <div style="margin-bottom:32px;padding:20px;background:#111111;border-radius:8px;border:1px solid #1f1f1f;">
-      <h2 style="margin:0 0 16px 0;font-size:16px;font-weight:600;color:#ffffff;">${result.brand}</h2>
-      ${content}
-    </div>
-  `
-}
-
-function sectionHeader(title: string, accentColor: string): string {
-  return `
-    <div style="margin-bottom:24px;margin-top:8px;">
-      <div style="height:4px;background:${accentColor};border-radius:2px;margin-bottom:12px;"></div>
-      <h2 style="margin:0;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">${title}</h2>
-    </div>
-  `
-}
-
-function keyEventRow(label: string, count: number, delta7d: number, deltaYoY: number): string {
-  return `
-    <tr>
-      <td style="padding:10px 0;color:#9ca3af;font-size:14px;">${label}</td>
-      <td style="padding:10px 0;color:#ffffff;font-size:14px;font-weight:500;">${count.toLocaleString()}</td>
-      <td style="padding:10px 0;"><span style="${badgeStyle(delta7d)}">${formatDelta(delta7d)} WoW</span></td>
-      <td style="padding:10px 0;"><span style="${badgeStyle(deltaYoY)}">${formatDelta(deltaYoY)} YoY</span></td>
-    </tr>
-  `
+  syncStatus?: SyncStatus | null
 }
 
 // Formatting helpers
@@ -124,17 +33,22 @@ function fmtRev(n: number): string { return '$' + n.toLocaleString('en-US', { ma
 function fmtPct(v: number): string { const p = Math.round(v * 100); return (p >= 0 ? '+' : '') + p + '%' }
 function fmtBps(v: number): string { return (v >= 0 ? '+' : '') + v + ' bps' }
 
-function badge(value: number, text: string): string {
-  const bg = value > 0 ? '#166534' : value < 0 ? '#991b1b' : '#374151'
-  const fg = value > 0 ? '#dcfce7' : value < 0 ? '#fee2e2' : '#d1d5db'
+// Badge color logic: grey for small changes (|delta| <= threshold).
+// Threshold is 0.10 (10%) for percentage deltas and 1000 bps for bps deltas.
+function badge(value: number, text: string, isBps = false): string {
+  const threshold = isBps ? 1000 : 0.10
+  const isPositive = value > threshold
+  const isNegative = value < -threshold
+  const bg = isPositive ? '#166534' : isNegative ? '#991b1b' : '#374151'
+  const fg = isPositive ? '#dcfce7' : isNegative ? '#fee2e2' : '#d1d5db'
   return `<div style="margin-top:3px;"><span style="display:inline-block;background:${bg};color:${fg};padding:1px 6px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;">${text}</span></div>`
 }
 
 // Cell: value on top, deltas below
-function metricCell(value: string, wow: string | null, wowVal: number | null, yoy: string | null, yoyVal: number | null, is24h = false): string {
+function metricCell(value: string, wow: string | null, wowVal: number | null, yoy: string | null, yoyVal: number | null, is24h = false, isBps = false): string {
   const wowLabel = is24h ? 'vs. Prior Day' : 'WoW'
-  const wowBadge = wow !== null && wowVal !== null ? badge(wowVal, `${wow} ${wowLabel}`) : ''
-  const yoyBadge = yoy !== null && yoyVal !== null ? badge(yoyVal, `${yoy} YoY`) : ''
+  const wowBadge = wow !== null && wowVal !== null ? badge(wowVal, `${wow} ${wowLabel}`, isBps) : ''
+  const yoyBadge = yoy !== null && yoyVal !== null ? badge(yoyVal, `${yoy} YoY`, isBps) : ''
   return `<td style="padding:8px 6px;color:#ffffff;font-size:13px;vertical-align:top;text-align:right;width:22%;">
     <div style="font-weight:500;">${value}</div>
     ${wowBadge}${yoyBadge}
@@ -146,13 +60,14 @@ function trafficRow(
   label: string,
   v24h: string, wow24h: string, wow24hVal: number,
   v7d: string,  wow7d: string,  wow7dVal: number,  yoy7d: string,  yoy7dVal: number,
-  v28d: string, wow28d: string, wow28dVal: number, yoy28d: string, yoy28dVal: number
+  v28d: string, wow28d: string, wow28dVal: number, yoy28d: string, yoy28dVal: number,
+  isBps = false
 ): string {
   return `<tr>
     <td style="padding:8px 6px;color:#9ca3af;font-size:13px;vertical-align:top;width:34%;">${label}</td>
-    ${metricCell(v24h, wow24h, wow24hVal, null, null, true)}
-    ${metricCell(v7d, wow7d, wow7dVal, yoy7d, yoy7dVal, false)}
-    ${metricCell(v28d, wow28d, wow28dVal, yoy28d, yoy28dVal, false)}
+    ${metricCell(v24h, wow24h, wow24hVal, null, null, true, isBps)}
+    ${metricCell(v7d, wow7d, wow7dVal, yoy7d, yoy7dVal, false, isBps)}
+    ${metricCell(v28d, wow28d, wow28dVal, yoy28d, yoy28dVal, false, isBps)}
   </tr>`
 }
 
@@ -213,13 +128,6 @@ function trafficCard(
   }
 
   const rows = [
-    // Total Users
-    trafficRow(
-      'Total Users',
-      fmtNum(traffic.totalUsersYday), fmtPct(traffic.totalUsersDeltaYday), traffic.totalUsersDeltaYday,
-      fmtNum(traffic.totalUsers),     fmtPct(traffic.totalUsersDelta7d),   traffic.totalUsersDelta7d,   fmtPct(traffic.totalUsersDeltaYoY),   traffic.totalUsersDeltaYoY,
-      fmtNum(traffic.totalUsers28d),  fmtPct(traffic.totalUsersDelta28d),  traffic.totalUsersDelta28d,  fmtPct(traffic.totalUsersDeltaYoY28d), traffic.totalUsersDeltaYoY28d
-    ),
     // Active Users
     trafficRow(
       'Active Users',
@@ -227,19 +135,13 @@ function trafficCard(
       fmtNum(traffic.activeUsers),     fmtPct(traffic.activeUsersDelta7d),   traffic.activeUsersDelta7d,   fmtPct(traffic.activeUsersDeltaYoY),   traffic.activeUsersDeltaYoY,
       fmtNum(traffic.activeUsers28d),  fmtPct(traffic.activeUsersDelta28d),  traffic.activeUsersDelta28d,  fmtPct(traffic.activeUsersDeltaYoY28d), traffic.activeUsersDeltaYoY28d
     ),
-    // Active Rate %
-    trafficRow(
-      'Active Rate',
-      (traffic.activeUserRateYday * 100).toFixed(1) + '%', fmtBps(traffic.activeUserRateDeltaYday), traffic.activeUserRateDeltaYday,
-      (traffic.activeUserRate * 100).toFixed(1) + '%',     fmtBps(traffic.activeUserRateDelta7d),   traffic.activeUserRateDelta7d,   fmtBps(traffic.activeUserRateDeltaYoY),   traffic.activeUserRateDeltaYoY,
-      (traffic.activeUserRate28d * 100).toFixed(1) + '%',  fmtBps(traffic.activeUserRateDelta28d),  traffic.activeUserRateDelta28d,  fmtBps(traffic.activeUserRateDeltaYoY28d), traffic.activeUserRateDeltaYoY28d
-    ),
-    // Key Event Rate
+    // Key Event Rate (bps-based deltas)
     trafficRow(
       'Key Event Rate',
       (traffic.userKeyEventRateYday * 100).toFixed(2) + '%', fmtBps(traffic.userKeyEventRateDeltaYday), traffic.userKeyEventRateDeltaYday,
       (traffic.userKeyEventRate * 100).toFixed(2) + '%',     fmtBps(traffic.userKeyEventRateDelta7d),   traffic.userKeyEventRateDelta7d,   fmtBps(traffic.userKeyEventRateDeltaYoY),   traffic.userKeyEventRateDeltaYoY,
-      (traffic.userKeyEventRate28d * 100).toFixed(2) + '%',  fmtBps(traffic.userKeyEventRateDelta28d),  traffic.userKeyEventRateDelta28d,  fmtBps(traffic.userKeyEventRateDeltaYoY28d), traffic.userKeyEventRateDeltaYoY28d
+      (traffic.userKeyEventRate28d * 100).toFixed(2) + '%',  fmtBps(traffic.userKeyEventRateDelta28d),  traffic.userKeyEventRateDelta28d,  fmtBps(traffic.userKeyEventRateDeltaYoY28d), traffic.userKeyEventRateDeltaYoY28d,
+      true
     ),
   ]
 
@@ -272,6 +174,41 @@ function bookingCard(title: string, accentColor: string, period: BookingPeriod |
   return card(title, accentColor, table)
 }
 
+// Sync status banner — shown at the top of each email.
+function syncBanner(sync: SyncStatus | null | undefined): string {
+  if (!sync) return ''
+
+  // Error or missing run
+  if (sync.error || !sync.runAt) {
+    const msg = sync.error ?? 'No sync has run yet'
+    return `<div style="margin-bottom:16px;padding:10px 14px;background:#2a1010;border:1px solid #7f1d1d;border-radius:6px;">
+      <div style="font-size:11px;font-weight:600;color:#fecaca;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Flybook Sync · Error</div>
+      <div style="font-size:12px;color:#fca5a5;">${msg}</div>
+    </div>`
+  }
+
+  const status = (sync.status ?? 'unknown').toLowerCase()
+  const isSuccess = status === 'success'
+  const isPartial = status === 'partial'
+  const bg = isSuccess ? '#0f2a1a' : isPartial ? '#2a2410' : '#2a1010'
+  const border = isSuccess ? '#166534' : isPartial ? '#78350f' : '#7f1d1d'
+  const accent = isSuccess ? '#86efac' : isPartial ? '#fde68a' : '#fca5a5'
+  const labelText = isSuccess ? 'Flybook Sync · OK' : isPartial ? 'Flybook Sync · Partial' : `Flybook Sync · ${status}`
+
+  const runAtLabel = new Date(sync.runAt).toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  })
+  const unmatched = sync.unmatchedCount ?? 0
+  const inserted = sync.bookingsInserted ?? 0
+  const fetched = sync.reservationsFetched ?? 0
+
+  return `<div style="margin-bottom:16px;padding:10px 14px;background:${bg};border:1px solid ${border};border-radius:6px;">
+    <div style="font-size:11px;font-weight:600;color:${accent};text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">${labelText}</div>
+    <div style="font-size:12px;color:#d1d5db;">Last run ${runAtLabel} · ${fetched} reservations · ${inserted} upserted · ${unmatched} unmatched</div>
+  </div>`
+}
+
 export function buildAlpenglowEmail(data: DashboardData): string {
   const findBrand = (name: string): BrandResult =>
     data.brands.find(b => b.brand === name) ?? { brand: name, traffic: null }
@@ -287,6 +224,7 @@ export function buildAlpenglowEmail(data: DashboardData): string {
       <h1 style="margin:0 0 4px 0;font-size:24px;font-weight:700;color:#ffffff;">Alpenglow Daily</h1>
       <p style="margin:0;font-size:13px;color:#6b7280;">${data.date}</p>
     </div>
+    ${syncBanner(data.syncStatus)}
     ${sectionHeader2('Alpenglow', AEX)}
     ${trafficCard('Alpenglow Expeditions — Traffic', AEX, alpenglow.traffic, data.alpenglowInquiries, 'Inquire Form Submissions', alpenglow.error)}
     ${trafficCard('Tahoe Via Ferrata — Traffic', AEX, via.traffic, null, null, via.error)}
@@ -317,6 +255,7 @@ export function buildThomsonEmail(data: DashboardData): string {
       <h1 style="margin:0 0 4px 0;font-size:24px;font-weight:700;color:#ffffff;">Thomson Daily</h1>
       <p style="margin:0;font-size:13px;color:#6b7280;">${data.date}</p>
     </div>
+    ${syncBanner(data.syncStatus)}
     ${sectionHeader2('Thomson', TBT_ACCENT)}
     ${trafficCard('Thomson Bike Tours — Traffic', TBT, thomson.traffic, data.thomsonPurchases ?? null, 'Purchases', thomson.error)}
     ${trafficCard('Thomson Spectator — Traffic', TBT, thomsonSpectator.traffic, data.thomsonSpectatorPurchases ?? null, 'Purchases', thomsonSpectator.error)}
@@ -341,7 +280,7 @@ export function buildDashboardEmail(data: DashboardData): string {
   const thomsonSpectator = findBrand('Thomson Spectator')
 
   const AEX = '#faa719'
-  const TBT = '#4d7fd4'  // lighter version of #0032ad for readability on dark bg
+  const TBT = '#4d7fd4'
 
   const alpenglowSection = `
     ${sectionHeader2('Alpenglow', AEX)}
@@ -371,6 +310,7 @@ export function buildDashboardEmail(data: DashboardData): string {
       <h1 style="margin:0 0 4px 0;font-size:24px;font-weight:700;color:#ffffff;">MWP Daily</h1>
       <p style="margin:0;font-size:13px;color:#6b7280;">${data.date}</p>
     </div>
+    ${syncBanner(data.syncStatus)}
     ${alpenglowSection}
     ${thomsonSection}
     <div style="margin-top:24px;padding-top:12px;border-top:1px solid #1f1f1f;">

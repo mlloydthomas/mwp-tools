@@ -13,6 +13,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/cron/flybook-sync",
+      "schedule": "0 5 * * *"
+    },
+    {
       "path": "/api/cron/dashboard",
       "schedule": "0 23 * * *"
     },
@@ -36,6 +40,9 @@
       "maxDuration": 300
     },
     "src/app/api/cron/engagement/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cron/flybook-sync/route.ts": {
       "maxDuration": 300
     },
     "src/app/api/cron/dashboard/route.ts": {

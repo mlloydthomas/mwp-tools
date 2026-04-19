@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { getTrafficMetrics, getKeyEventCount, KeyEventMetrics } from '@/lib/analytics/client'
 import { getAlpenglowBookingMetrics, AlpenglowBookingMetrics } from '@/lib/bookings/alpenglow'
 import { buildAlpenglowEmail, BrandResult, DashboardData } from '@/lib/email/dashboard'
+import { getLatestSyncStatus } from '@/lib/flybook/sync'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -50,6 +51,8 @@ export async function GET(request: NextRequest) {
     console.error('Alpenglow bookings error:', err)
   }
 
+  const syncStatus = await getLatestSyncStatus('aex')
+
   const date = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric'
   })
@@ -61,6 +64,7 @@ export async function GET(request: NextRequest) {
     alpenglowInquiries,
     thomsonPurchases: null,
     thomsonSpectatorPurchases: null,
+    syncStatus,
   }
   const html = buildAlpenglowEmail(data)
 
